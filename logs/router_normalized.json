@@ -1,0 +1,42 @@
+[
+    {
+        "pri": "189",
+        "seq": "44",
+        "timestamp": "Jul 24 23:35:44.987",
+        "facility": "LINK",
+        "severity": "5",
+        "mnemonic": "CHANGED",
+        "msg": "Interface FastEthernet0/0, change state to administratively down",
+        "type": "router"
+    },
+    {
+        "pri": "187",
+        "seq": "45",
+        "timestamp": "Jul 24 23:35:40.987",
+        "facility": "LINK",
+        "severity": "3",
+        "mnemonic": "CHANGED",
+        "msg": "Interface FastEthernet0/0, change state to up",
+        "type": "router"
+    },
+    {
+        "pri": "192",
+        "seq": "45",
+        "timestamp": "Jul 30 23:35:40.987",
+        "facility": "LINK",
+        "severity": "3",
+        "mnemonic": "CHANGED",
+        "msg": "Interface FastEthernet0/0, change state to up",
+        "type": "router"
+    },
+    {
+        "pri": "193",
+        "seq": "47",
+        "timestamp": "Jul 31 23:35:40.987",
+        "facility": "LINK",
+        "severity": "3",
+        "mnemonic": "CHANGED",
+        "msg": "Interface FastEthernet0/0, change state to up",
+        "type": "router"
+    }
+]
