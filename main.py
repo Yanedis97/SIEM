@@ -1,10 +1,14 @@
-# main.py
 from sqlalchemy.orm import Session
 from database import SessionLocal
 from auth import create_user, authenticate_user
 from elasticsearch import Elasticsearch
+from utils import elasticsearch
+from utils import normalize # Para la normalización de logs
+from utils import nxlog  # Para configurar NXLog
 import time
 import rules  # Archivo donde están las reglas de correlación
+import json
+
 
 # Conexión a Elasticsearch
 es = Elasticsearch(["localhost:9200"])
@@ -100,6 +104,21 @@ def process_rules(es, last_timestamp):
         # Llamar a la función de la regla con los logs obtenidos
         config["function"](logs)
 
+def save_logs_to_elasticsearch(es, logs):
+    """
+    Guarda los logs normalizados en Elasticsearch.
+    """
+    for log in logs:
+        try:
+            es.index(index=INDEX, body=log)
+            print(f"Log guardado: {log}")
+        except Exception as e:
+            print(f"Error al guardar log en Elasticsearch: {e}")
+
+
+def normalize_and_save_logs():
+    # Aquí simplemente inicializamos el monitor de logs
+    normalize.start_monitoring('C:\\logs')
 
 def main():
     global last_timestamp
@@ -107,6 +126,9 @@ def main():
     # Crear una sesión para interactuar con la base de datos
     db: Session = SessionLocal()
 
+    # Configurar NXLog al inicio
+    nxlog.configure_nxlog()  # Asumiendo que esta función está en nxlog.py
+    
     # Ejemplo de registro de un nuevo usuario
     username = "testuser"
     password = "password123"

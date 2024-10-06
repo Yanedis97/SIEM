@@ -1,4 +1,3 @@
-import time
 import json
 import re
 from watchdog.observers import Observer
@@ -41,20 +40,21 @@ class LogNormalizer:
             json.dump(normalized_logs, outfile, indent=4)
         print(f"Archivo normalizado guardado en: {output_file}")
 
-if __name__ == "__main__":
+def start_monitoring(log_directory):
     normalizer = LogNormalizer()
-    
+    # Aquí puedes agregar los patrones de normalización conocidos
     normalizer.add_pattern(r'<(?P<pri>\d+)>(?P<seq>\d+): \*(?P<timestamp>\S+ \d+ \d+:\d+:\d+\.\d+): \%(?P<facility>[\w-]+)-(?P<severity>\d+)-(?P<mnemonic>[\w-]+): (?P<msg>.+)', 'router')
-    #normalizer.add_pattern(r'\[\*\*\] \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+) \[\*\*\]\s+\[Priority: (?P<priority>\d+)\]\s+(?P<timestamp>\d+/\d+-\d+:\d+:\d+\.\d+)\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+) -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)', 'snort')
-    
+    #normalizer.add_pattern(r'...')  # Puedes añadir más patrones
+
     event_handler = LogHandler(normalizer)
     observer = Observer()
-    observer.schedule(event_handler, path='C:\\logs\\', recursive=False)
+    observer.schedule(event_handler, path=log_directory, recursive=False)
     observer.start()
+    print(f"Monitoreando cambios en el directorio: {log_directory}")
 
     try:
         while True:
-            time.sleep(1)
+            pass  # Mantener el hilo activo
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
