@@ -3,11 +3,10 @@ from database import SessionLocal
 from auth import create_user, authenticate_user
 from elasticsearch import Elasticsearch
 from utils import elasticsearch
-from utils import normalize # Para la normalización de logs
+from utils import normalize  # Para la normalización de logs
 from utils import nxlog  # Para configurar NXLog
 import time
 import rules  # Archivo donde están las reglas de correlación
-import json
 
 
 # Conexión a Elasticsearch
@@ -50,7 +49,6 @@ def fetch_logs(es, index, last_timestamp, filtered_devices=None, size=100):
     """
     Obtiene los logs de Elasticsearch a partir de un timestamp dado y opcionalmente filtra por dispositivos.
     """
-    # Crear la consulta base con el rango de tiempo
     query = {
         "size": size,
         "query": {
@@ -71,15 +69,13 @@ def fetch_logs(es, index, last_timestamp, filtered_devices=None, size=100):
         ]
     }
 
-    # Si hay dispositivos filtrados, añadir condición a la consulta
     if filtered_devices:
         query["query"]["bool"]["must"].append({
             "terms": {
-                "device_id.keyword": filtered_devices  # Cambia 'device_id' por el campo correspondiente en tus logs
+                "device_id.keyword": filtered_devices  # Asegúrate que este campo coincide con tus logs
             }
         })
 
-    # Realizar la búsqueda en Elasticsearch
     response = es.search(index=index, body=query)
     logs = response['hits']['hits']
     return logs
@@ -91,7 +87,7 @@ def process_rules(es, last_timestamp):
     """
     for rule_name, config in RULES_CONFIG.items():
         print(f"Procesando regla: {rule_name}")
-        
+
         # Obtener logs según configuración de la regla
         logs = fetch_logs(
             es=es,
@@ -104,21 +100,13 @@ def process_rules(es, last_timestamp):
         # Llamar a la función de la regla con los logs obtenidos
         config["function"](logs)
 
-def save_logs_to_elasticsearch(es, logs):
-    """
-    Guarda los logs normalizados en Elasticsearch.
-    """
-    for log in logs:
-        try:
-            es.index(index=INDEX, body=log)
-            print(f"Log guardado: {log}")
-        except Exception as e:
-            print(f"Error al guardar log en Elasticsearch: {e}")
 
+def normalize_and_save_logs(es):
+    """
+    Inicia la normalización y el guardado de logs en Elasticsearch.
+    """
+    normalize.start_monitoring('C:\\logs', es)  # Pasa la instancia de Elasticsearch aquí
 
-def normalize_and_save_logs():
-    # Aquí simplemente inicializamos el monitor de logs
-    normalize.start_monitoring('C:\\logs')
 
 def main():
     global last_timestamp
@@ -128,7 +116,7 @@ def main():
 
     # Configurar NXLog al inicio
     nxlog.configure_nxlog()  # Asumiendo que esta función está en nxlog.py
-    
+
     # Ejemplo de registro de un nuevo usuario
     username = "testuser"
     password = "password123"
@@ -141,6 +129,9 @@ def main():
         print(f"Usuario autenticado: {auth_user.username}")
     else:
         print("Fallo en la autenticación")
+
+    # Iniciar la normalización y guardado de logs en un hilo separado
+    normalize_and_save_logs(es)
 
     # Lógica de lectura de logs y reglas de correlación
     try:

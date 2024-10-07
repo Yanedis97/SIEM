@@ -1,7 +1,9 @@
-import json
+import uuid
 import re
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from main import save_logs_to_elasticsearch
+
 
 class LogHandler(FileSystemEventHandler):
     def __init__(self, normalizer):
@@ -13,7 +15,8 @@ class LogHandler(FileSystemEventHandler):
             self.normalizer.normalize_file(event.src_path, event.src_path.replace(".log", "_normalized.json"))
 
 class LogNormalizer:
-    def __init__(self):
+    def __init__(self, es):
+        self.elasticsearch = es
         self.patterns = []
 
     def add_pattern(self, pattern, log_type):
@@ -27,21 +30,40 @@ class LogNormalizer:
                 log_data['type'] = log_type
                 return log_data
         return None
+    
+    def save_logs_to_elasticsearch(self, logs):
+        """
+        Guarda los logs normalizados en Elasticsearch.
+        """
+        for log in logs:
+            # Verificar si el ID del log ya existe en Elasticsearch
+            existing_log = self.elasticsearch.get(index="logs", id=log["id"], ignore=[404])
+
+            # Si el log no existe, lo guardamos
+            if not existing_log:
+                self.elasticsearch.index(index="logs", id=log["id"], body=log)
 
     def normalize_file(self, input_file, output_file):
-        normalized_logs = []
-        with open(input_file, 'r') as infile:
-            for line in infile:
-                log_data = self.normalize_line(line)
-                if log_data:
-                    print(f"Línea normalizada: {log_data}")
-                    normalized_logs.append(log_data)
-        with open(output_file, 'w') as outfile:
-            json.dump(normalized_logs, outfile, indent=4)
-        print(f"Archivo normalizado guardado en: {output_file}")
+        with open(input_file, "r") as f:
+            lines = f.readlines()
 
-def start_monitoring(log_directory):
-    normalizer = LogNormalizer()
+            normalized_logs = []
+            for line in lines:
+                normalized_log = self.normalize_line(line)
+
+                if normalized_log is not None:
+                    # Generar un UUID único para el log
+                    log_id = str(uuid.uuid4())
+                    normalized_log["id"] = log_id
+
+                    normalized_logs.append(normalized_log)
+
+            # Guardar los logs en Elasticsearch (evitar duplicados basados en ID)
+            self.save_logs_to_elasticsearch(normalized_logs)
+
+
+def start_monitoring(log_directory, es):
+    normalizer = LogNormalizer(es)
     # Aquí puedes agregar los patrones de normalización conocidos
     normalizer.add_pattern(r'<(?P<pri>\d+)>(?P<seq>\d+): \*(?P<timestamp>\S+ \d+ \d+:\d+:\d+\.\d+): \%(?P<facility>[\w-]+)-(?P<severity>\d+)-(?P<mnemonic>[\w-]+): (?P<msg>.+)', 'router')
     #normalizer.add_pattern(r'...')  # Puedes añadir más patrones
