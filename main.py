@@ -1,8 +1,7 @@
-from sqlalchemy.orm import Session
-from database import SessionLocal
+#from sqlalchemy.orm import Session
+#from database import SessionLocal
 from auth import create_user, authenticate_user
 from elasticsearch import Elasticsearch
-from utils import elasticsearch
 from utils import normalize  # Para la normalización de logs
 from utils import nxlog  # Para configurar NXLog
 import time
@@ -112,23 +111,23 @@ def main():
     global last_timestamp
 
     # Crear una sesión para interactuar con la base de datos
-    db: Session = SessionLocal()
+    #db: Session = SessionLocal()
 
     # Configurar NXLog al inicio
-    nxlog.configure_nxlog()  # Asumiendo que esta función está en nxlog.py
+    #nxlog.configure_nxlog()  # Asumiendo que esta función está en nxlog.py
 
     # Ejemplo de registro de un nuevo usuario
-    username = "testuser"
-    password = "password123"
-    user = create_user(db, username, password)
-    print(f"Usuario creado: {user.username}")
+    #username = "testuser"
+    #password = "password123"
+    #user = create_user(db, username, password)
+    #print(f"Usuario creado: {user.username}")
 
     # Ejemplo de autenticación de usuario
-    auth_user = authenticate_user(db, username, password)
-    if auth_user:
-        print(f"Usuario autenticado: {auth_user.username}")
-    else:
-        print("Fallo en la autenticación")
+    #auth_user = authenticate_user(db, username, password)
+    #if auth_user:
+    #    print(f"Usuario autenticado: {auth_user.username}")
+    #else:
+    #    print("Fallo en la autenticación")
 
     # Iniciar la normalización y guardado de logs en un hilo separado
     normalize_and_save_logs(es)
@@ -150,9 +149,9 @@ def main():
     except KeyboardInterrupt:
         print("Deteniendo la ejecución...")
 
-    finally:
+    #finally:
         # Cerrar la sesión de base de datos al final del proceso
-        db.close()
+        #db.close()
 
 
 if __name__ == "__main__":
