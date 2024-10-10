@@ -2,7 +2,7 @@ import uuid
 import re
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from main import save_logs_to_elasticsearch
+#from main import save_logs_to_elasticsearch
 
 
 class LogHandler(FileSystemEventHandler):
@@ -12,7 +12,7 @@ class LogHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.src_path.endswith(".log"):
             print(f"Archivo modificado: {event.src_path}")
-            self.normalizer.normalize_file(event.src_path, event.src_path.replace(".log", "_normalized.json"))
+            self.normalizer.normalize_file(event.src_path)
 
 class LogNormalizer:
     def __init__(self, es):
@@ -29,7 +29,9 @@ class LogNormalizer:
                 log_data = match.groupdict()
                 log_data['type'] = log_type
                 return log_data
-        return None
+            
+        # Manejar logs no reconocidos
+        return {"raw_log": line, "type": "unrecognized"}
     
     def save_logs_to_elasticsearch(self, logs):
         """
@@ -43,13 +45,14 @@ class LogNormalizer:
             if not existing_log:
                 self.elasticsearch.index(index="logs", id=log["id"], body=log)
 
-    def normalize_file(self, input_file, output_file):
+    def normalize_file(self, input_file):
         with open(input_file, "r") as f:
             lines = f.readlines()
 
             normalized_logs = []
             for line in lines:
                 normalized_log = self.normalize_line(line)
+                print(f"normalize_log: {normalized_log}")
 
                 if normalized_log is not None:
                     # Generar un UUID único para el log
@@ -64,9 +67,16 @@ class LogNormalizer:
 
 def start_monitoring(log_directory, es):
     normalizer = LogNormalizer(es)
-    # Aquí puedes agregar los patrones de normalización conocidos
-    normalizer.add_pattern(r'<(?P<pri>\d+)>(?P<seq>\d+): \*(?P<timestamp>\S+ \d+ \d+:\d+:\d+\.\d+): \%(?P<facility>[\w-]+)-(?P<severity>\d+)-(?P<mnemonic>[\w-]+): (?P<msg>.+)', 'router')
-    #normalizer.add_pattern(r'...')  # Puedes añadir más patrones
+    # agregar los patrones de normalización conocidos
+    normalizer.add_pattern(
+    r'<(?P<pri>\d+)>.*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+) \[Classification: (?P<classification>.+)\] \[Priority: (?P<priority>\d+)\] \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+) -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)',
+    'snort'
+    )
+
+    normalizer.add_pattern(
+        r'<(?P<pri>\d+)>(?P<seq>\d+): \*(?P<timestamp>\S+ \d+ \d+:\d+:\d+\.\d+): \%(?P<facility>[\w-]+)-(?P<severity>\d+)-(?P<mnemonic>[\w-]+): (?P<msg>.+)',
+        'router'
+    )
 
     event_handler = LogHandler(normalizer)
     observer = Observer()
