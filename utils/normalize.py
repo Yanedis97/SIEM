@@ -1,5 +1,6 @@
 import uuid
 import re
+import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 #from main import save_logs_to_elasticsearch
@@ -38,12 +39,13 @@ class LogNormalizer:
         Guarda los logs normalizados en Elasticsearch.
         """
         for log in logs:
+            log_json = json.dumps(log)
             # Verificar si el ID del log ya existe en Elasticsearch
             existing_log = self.elasticsearch.get(index="logs", id=log["id"], ignore=[404])
 
             # Si el log no existe, lo guardamos
-            if not existing_log:
-                self.elasticsearch.index(index="logs", id=log["id"], body=log)
+            if not existing_log['found']:    
+                self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
 
     def normalize_file(self, input_file):
         with open(input_file, "r") as f:
@@ -67,10 +69,10 @@ class LogNormalizer:
 
 def start_monitoring(log_directory, es):
     normalizer = LogNormalizer(es)
-    # agregar los patrones de normalización conocidos
+    # Agregar los patrones de normalización conocidos
     normalizer.add_pattern(
-    r'<(?P<pri>\d+)>.*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+) \[Classification: (?P<classification>.+)\] \[Priority: (?P<priority>\d+)\] \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+) -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)',
-    'snort'
+        r'<(?P<pri>\d+)>.*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+?) \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)? -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)?',
+        'snort'
     )
 
     normalizer.add_pattern(
@@ -78,11 +80,25 @@ def start_monitoring(log_directory, es):
         'router'
     )
 
+    normalizer.add_pattern(
+        r'<(?P<pri>\d+)>.*CRON\[\d+\]: (?P<msg>.+)',
+        'cron'
+    )
+
+    normalizer.add_pattern(
+        r'<(?P<pri>\d+)>.*snapd\[\d+\]: (?P<msg>.+)',
+        'snapd'
+    )
+
     event_handler = LogHandler(normalizer)
     observer = Observer()
     observer.schedule(event_handler, path=log_directory, recursive=False)
     observer.start()
     print(f"Monitoreando cambios en el directorio: {log_directory}")
+
+    #para ver la informacion que esta guardada en el elasticsearch
+    # response = es.search(index="logs", body={"query": {"match_all": {}}})
+    # print("Resultados de la consulta:", response)
 
     try:
         while True:

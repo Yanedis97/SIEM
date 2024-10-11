@@ -9,13 +9,17 @@ import rules  # Archivo donde están las reglas de correlación
 
 
 # Conexión a Elasticsearch
-es = Elasticsearch(["localhost:9200"])
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=('elastic', 'Y07U0Mmu7Z7+MpVfQJjf'),
+    verify_certs=False  
+)
 
 # Índice de logs en Elasticsearch
 INDEX = "logs-*"
 
 # Intervalo para leer los logs (en segundos)
-READ_INTERVAL = 60
+READ_INTERVAL = 30
 
 # Último timestamp procesado (puede iniciarse como 'now-1d' o leerlo de la base de datos)
 last_timestamp = "now-1d"
@@ -27,7 +31,7 @@ FILTERED_DEVICES = ["device1", "device2", "192.168.1.10"]
 RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
-        "devices": FILTERED_DEVICES,
+        "devices": None,
         "log_size": 100
     },
     "privilege_changes": {
@@ -37,7 +41,7 @@ RULES_CONFIG = {
     },
     "anomalous_traffic": {
         "function": rules.check_anomalous_traffic,
-        "devices": FILTERED_DEVICES,
+        "devices": None,
         "log_size": 50
     },
     # Agregar más reglas con sus configuraciones aquí...
