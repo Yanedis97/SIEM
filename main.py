@@ -101,7 +101,7 @@ def process_rules(es, last_timestamp):
         )
         
         # Llamar a la función de la regla con los logs obtenidos
-        config["function"](logs)
+        config["function"](logs, es)
 
 
 def normalize_and_save_logs(es):
