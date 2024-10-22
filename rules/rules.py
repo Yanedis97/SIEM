@@ -1,5 +1,9 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
+from flask_socketio import SocketIO
+
+# Inicializar SocketIO
+socketio = SocketIO(app)
 
 # Parámetros de reglas de correlación
 BRUTE_FORCE_THRESHOLD = 5   # Número de intentos fallidos para generar alerta
@@ -59,6 +63,8 @@ def activate_alert(alert_id, message, es):
         "status": "active"
     }
     es.index(index="alerts", body=alert_data)
+    # Enviar notificación al frontend (WebSocket)
+    socketio.emit('new_alert', alert_data)
 
 def check_brute_force(log, es):
     """
