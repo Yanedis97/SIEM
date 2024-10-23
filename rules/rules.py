@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
 from flask_socketio import SocketIO
+from main import app
 
 # Inicializar SocketIO
 socketio = SocketIO(app)

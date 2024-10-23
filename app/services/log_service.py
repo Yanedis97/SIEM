@@ -1,12 +1,14 @@
-# services/log_service.py
 from elasticsearch import Elasticsearch
 
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
-# Servicio para obtener todos los logs
-def get_all_logs():
+# Servicio para obtener los logs con paginación
+def get_all_logs(page: int = 1, size: int = 10):
     try:
-        result = es.search(index="logs", size=1000)
+        # Calcular el offset basado en el número de página y el tamaño de página
+        offset = (page - 1) * size
+        # Realizar la consulta a Elasticsearch con paginación
+        result = es.search(index="logs", from_=offset, size=size)
         logs = [hit['_source'] for hit in result['hits']['hits']]
         return logs
     except Exception as e:

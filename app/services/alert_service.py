@@ -1,12 +1,13 @@
-# services/alert_service.py
 from elasticsearch import Elasticsearch
 
 es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
 
-# Servicio para obtener todas las alertas guardadas
-def get_all_alerts():
+# Servicio para obtener todas las alertas guardadas con paginación
+def get_all_alerts(page: int = 1, size: int = 10):
     try:
-        result = es.search(index="alerts", size=1000)
+        # Usamos `from` y `size` para paginar los resultados
+        start_from = (page - 1) * size
+        result = es.search(index="alerts", size=size, from_=start_from)
         alerts = [hit['_source'] for hit in result['hits']['hits']]
         return alerts
     except Exception as e:
@@ -15,7 +16,7 @@ def get_all_alerts():
 # Servicio para obtener la alerta generada en tiempo real
 def get_realtime_alert():
     try:
-        # Filtramos por las alertas recientes en tiempo real
+        # Filtramos por las alertas más recientes en tiempo real
         result = es.search(index="alerts", size=1, sort="timestamp:desc")
         if result['hits']['hits']:
             alert = result['hits']['hits'][0]['_source']
