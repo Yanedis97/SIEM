@@ -1,6 +1,6 @@
-from elasticsearch import Elasticsearch
+from utils import elasticsearch
 
-es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+es = elasticsearch.connect_elasticsearch()
 
 # Servicio para obtener los logs con paginación
 def get_all_logs(page: int = 1, size: int = 10):

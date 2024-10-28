@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
-from flask_socketio import SocketIO
-from main import app
+# from flask_socketio import SocketIO
+# from main import app
 
 # Inicializar SocketIO
-socketio = SocketIO(app)
+# socketio = SocketIO(app)
 
 # Parámetros de reglas de correlación
 BRUTE_FORCE_THRESHOLD = 5   # Número de intentos fallidos para generar alerta
@@ -50,7 +50,7 @@ def is_alert_active(alert_id):
     """
     return alert_id in active_alerts
 
-def activate_alert(alert_id, message, es):
+def activate_alert(alert_id, message, es, context=None):
     """
     Activa una alerta y la guarda en el almacén temporal.
     """
@@ -61,11 +61,12 @@ def activate_alert(alert_id, message, es):
         "alert_id": alert_id,
         "message": message,
         "timestamp": datetime.now().isoformat(),
-        "status": "active"
+        "status": "active",
+        "context": context if context else {}  # Incluye el contexto si está presente
     }
     es.index(index="alerts", body=alert_data)
     # Enviar notificación al frontend (WebSocket)
-    socketio.emit('new_alert', alert_data)
+    # socketio.emit('new_alert', alert_data)
 
 def check_brute_force(log, es):
     """
@@ -84,7 +85,12 @@ def check_brute_force(log, es):
             alert_id = f"brute_force_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
             if not is_alert_active(alert_id):
                 message = f"Posible ataque de fuerza bruta desde {ip}"
-                activate_alert(alert_id, message, es)
+                context = {
+                    "ip": ip,
+                    "failed_attempts": len(login_tracker[ip]),
+                    "timestamp": timestamp.isoformat()
+                }
+                activate_alert(alert_id, message, es, context)
 
 def check_privilege_change(log, es):
     """
@@ -97,7 +103,11 @@ def check_privilege_change(log, es):
         alert_id = f"privilege_change_{user}_{timestamp.strftime('%Y%m%d%H%M%S')}"
         if not is_alert_active(alert_id):
             message = f"Cambio de privilegios detectado para el usuario {user}"
-            activate_alert(alert_id, message, es)
+            context = {
+                "user": user,
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
 
 def check_suspicious_traffic(log, es):
     """
@@ -115,7 +125,12 @@ def check_suspicious_traffic(log, es):
             alert_id = f"suspicious_traffic_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
             if not is_alert_active(alert_id):
                 message = f"Tráfico sospechoso detectado entre {source_ip} y {dest_ip}"
-                activate_alert(alert_id, message, es)
+                context = {
+                    "source_ip": source_ip,
+                    "dest_ip": dest_ip,
+                    "timestamp": timestamp.isoformat()
+                }
+                activate_alert(alert_id, message, es, context)
 
 def check_system_errors(log, es):
     """
@@ -128,20 +143,38 @@ def check_system_errors(log, es):
         alert_id = f"system_error_{timestamp.strftime('%Y%m%d%H%M%S')}"
         if not is_alert_active(alert_id):
             message = f"Error del sistema detectado: {error_message}"
-            activate_alert(alert_id, message, es)
+            context = {
+                "error_message": error_message,
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
 
 def check_snort_alert(log, es):
     """
     Regla de correlación para detectar alertas de Snort.
     """
-    if log['_source']['event']['category'] == 'snort_alert':
-        alert_message = log['_source']['message']
+    if log['_source'].get('type') == 'snort':
+        alert_message = log['_source'].get('msg', 'No message available')
+        source_ip = log['_source'].get('src_ip', 'IP desconocida')
+        dest_ip = log['_source'].get('dst_ip', 'IP desconocida')
         timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
+
+        # Generar un ID único para la alerta
+        alert_id = f"snort_alert_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
         
-        alert_id = f"snort_alert_{timestamp.strftime('%Y%m%d%H%M%S')}"
+        # Activar la alerta si no está activa
         if not is_alert_active(alert_id):
-            message = f"Alerta de Snort: {alert_message}"
-            activate_alert(alert_id, message, es)
+            message = f"Alerta de Snort detectada en el dispositivo {source_ip}: {alert_message}. Origen: {source_ip}, Destino: {dest_ip}"
+            context = {
+                "alert_message": alert_message,
+                "source_ip": source_ip,
+                "dest_ip": dest_ip,
+                "device": source_ip
+            }
+            # Agregar el ID de log a la alerta
+            log_id = log['_id']  # O el campo que identifica el log
+            activate_alert(alert_id, message, es, log_ids=[log_id], context=context)
+
 
 def check_time_related_events(log, es):
     """
@@ -159,7 +192,12 @@ def check_time_related_events(log, es):
         alert_id = f"time_related_events_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
         if not is_alert_active(alert_id):
             message = f"Eventos relacionados detectados para {ip} en el intervalo de tiempo especificado."
-            activate_alert(alert_id, message, es)
+            context = {
+                "ip": ip,
+                "event_count": len(event_tracker[ip]),
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
 
 def check_apt(log, es):
     source_ip = log['_source']['source']['ip']
@@ -170,111 +208,104 @@ def check_apt(log, es):
     apt_tracker[source_ip].append(timestamp)
     clean_old_entries(source_ip, APT_TIMEFRAME)
 
-    # Verificar si se supera el umbral de APT
+    # Verificar si hay patrones APT
     if len(apt_tracker[source_ip]) >= APT_THRESHOLD:
-        alert_id = f"apt_detected_{source_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+        alert_id = f"apt_alert_{source_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
         if not is_alert_active(alert_id):
-            message = f"Detección de posible ataque persistente (APT) desde {source_ip}."
-            activate_alert(alert_id, message, es)
+            message = f"Posible ataque persistente avanzado desde {source_ip}."
+            context = {
+                "source_ip": source_ip,
+                "event_type": event_type,
+                "event_count": len(apt_tracker[source_ip]),
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
 
-
-def check_unauthorized_access_and_activity(log, es):
+def check_recon_activity(log, es):
+    """
+    Función para verificar actividad de reconocimiento.
+    """
+    ip = log['_source']['source']['ip']
     timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
-    user = log['_source']['user']['name']
 
-    # Registro de acceso no autorizado
-    if log['_source']['event']['category'] == 'unauthorized_access':
-        access_tracker[user].append(timestamp)
-        clean_old_entries(user, 60)  # Limpiar después de 60 minutos
+    recon_tracker[ip].append(timestamp)
+    clean_old_entries(ip, RECON_THRESHOLD)
 
-        # Verificar acceso no autorizado
-        if len(access_tracker[user]) >= unauthorized_access_threshold:
-            alert_id = f"unauthorized_access_{user}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-            if not is_alert_active(alert_id):
-                message = f"Acceso no autorizado detectado para el usuario {user}."
-                activate_alert(alert_id, message, es)
+    # Generar alerta si hay actividad sospechosa de reconocimiento
+    if len(recon_tracker[ip]) >= RECON_THRESHOLD:
+        alert_id = f"recon_activity_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+        if not is_alert_active(alert_id):
+            message = f"Actividad de reconocimiento detectada desde {ip}."
+            context = {
+                "ip": ip,
+                "event_count": len(recon_tracker[ip]),
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
 
-    # Registro de actividad sospechosa
-    if log['_source']['event']['category'] == 'suspicious_activity':
-        activity_tracker[user].append(timestamp)
-        clean_old_entries(user, 60)  # Limpiar después de 60 minutos
-
-        # Verificar actividad sospechosa
-        if len(activity_tracker[user]) >= suspicious_activity_threshold:
-            alert_id = f"suspicious_activity_after_unauthorized_{user}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-            if not is_alert_active(alert_id):
-                message = f"Actividad sospechosa detectada tras acceso no autorizado del usuario {user}."
-                activate_alert(alert_id, message, es)
-
-
-def check_access_outside_work_hours(log, es):
-    if log['_source']['event']['category'] == 'resource_access':
-        timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
-        access_hour = timestamp.hour
-        user = log['_source']['user']['name']
-
-        # Verificar si el acceso fue fuera de horario laboral
-        if access_hour < WORK_HOURS_START or access_hour > WORK_HOURS_END:
-            alert_id = f"access_outside_work_hours_{user}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-            if not is_alert_active(alert_id):
-                message = f"Acceso a recursos fuera del horario laboral para el usuario {user}."
-                activate_alert(alert_id, message, es)
-
-def check_network_and_system_events(log, es):
+def check_exploitation_attempts(log, es):
+    """
+    Función para verificar intentos de explotación.
+    """
+    ip = log['_source']['source']['ip']
     timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
-    event_type = log['_source']['event']['category']
+
+    exploit_tracker[ip].append(timestamp)
+    clean_old_entries(ip, EXPLOITATION_THRESHOLD)
+
+    # Generar alerta si hay intentos de explotación
+    if len(exploit_tracker[ip]) >= EXPLOITATION_THRESHOLD:
+        alert_id = f"exploit_attempt_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+        if not is_alert_active(alert_id):
+            message = f"Intento de explotación detectado desde {ip}."
+            context = {
+                "ip": ip,
+                "event_count": len(exploit_tracker[ip]),
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
+
+def check_unauthorized_access(log, es):
+    """
+    Función para verificar intentos de acceso no autorizado.
+    """
+    ip = log['_source']['source']['ip']
+    timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
+
+    access_tracker[ip].append(timestamp)
+    clean_old_entries(ip, unauthorized_access_threshold)
+
+    # Generar alerta si hay intentos de acceso no autorizado
+    if len(access_tracker[ip]) >= unauthorized_access_threshold:
+        alert_id = f"unauthorized_access_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+        if not is_alert_active(alert_id):
+            message = f"Intento de acceso no autorizado desde {ip}."
+            context = {
+                "ip": ip,
+                "event_count": len(access_tracker[ip]),
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
+
+def check_suspicious_activity(log, es):
+    """
+    Función para verificar actividad sospechosa.
+    """
+    ip = log['_source']['source']['ip']
+    timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
+
+    activity_tracker[ip].append(timestamp)
+    clean_old_entries(ip, suspicious_activity_threshold)
+
+    # Generar alerta si hay actividad sospechosa
+    if len(activity_tracker[ip]) >= suspicious_activity_threshold:
+        alert_id = f"suspicious_activity_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+        if not is_alert_active(alert_id):
+            message = f"Actividad sospechosa detectada desde {ip}."
+            context = {
+                "ip": ip,
+                "event_count": len(activity_tracker[ip]),
+                "timestamp": timestamp.isoformat()
+            }
+            activate_alert(alert_id, message, es, context)
     
-    # Registro de eventos de red
-    if event_type == 'network_event':
-        source_ip = log['_source']['source']['ip']
-        system_event_tracker[source_ip].append(timestamp)
-        clean_old_entries(source_ip, SYSTEM_EVENT_TIMEFRAME)
-
-    # Registro de eventos de sistema
-    if event_type == 'system_event':
-        source_ip = log['_source']['source']['ip']
-        if source_ip in system_event_tracker and len(system_event_tracker[source_ip]) > 0:
-            alert_id = f"network_and_system_event_{source_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-            if not is_alert_active(alert_id):
-                message = f"Correlación de evento de red y de sistema detectada para {source_ip}."
-                activate_alert(alert_id, message, es)
-
-def check_recon_and_exploitation(log, es):
-    timestamp = datetime.strptime(log['_source']['@timestamp'], "%Y-%m-%dT%H:%M:%S.%fZ")
-    source_ip = log['_source']['source']['ip']
-
-    if log['_source']['event']['category'] == 'reconnaissance':
-        recon_tracker[source_ip].append(timestamp)
-        clean_old_entries(source_ip, 60)
-
-        if len(recon_tracker[source_ip]) >= RECON_THRESHOLD:
-            alert_id = f"recon_detected_{source_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-            if not is_alert_active(alert_id):
-                message = f"Actividades de reconocimiento detectadas desde {source_ip}."
-                activate_alert(alert_id, message, es)
-
-    if log['_source']['event']['category'] == 'exploitation':
-        exploit_tracker[source_ip].append(timestamp)
-        clean_old_entries(source_ip, 60)
-
-        if len(exploit_tracker[source_ip]) >= EXPLOITATION_THRESHOLD:
-            alert_id = f"exploitation_attempt_{source_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-            if not is_alert_active(alert_id):
-                message = f"Intentos de explotación detectados desde {source_ip} tras reconocimiento."
-                activate_alert(alert_id, message, es)
-
-def process_log(log, es):
-    """
-    Procesa un log individual y aplica las reglas de correlación.
-    """
-    check_brute_force(log, es)
-    check_privilege_change(log, es)
-    check_suspicious_traffic(log, es)
-    check_system_errors(log, es)
-    check_snort_alert(log, es)
-    check_time_related_events(log, es)
-    check_apt(log, es)
-    check_unauthorized_access_and_activity(log, es)
-    check_access_outside_work_hours(log, es)
-    check_network_and_system_events(log, es)
-    check_recon_and_exploitation(log, es)

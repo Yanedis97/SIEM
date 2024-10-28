@@ -1,7 +1,11 @@
 from elasticsearch import Elasticsearch
 
 def connect_elasticsearch():
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+    es = Elasticsearch(
+        "https://localhost:9200",
+        basic_auth=('elastic', 'Y07U0Mmu7Z7+MpVfQJjf'),
+        verify_certs=False  
+    )
     if es.ping():
         print('Conexión exitosa a Elasticsearch')
     else:

@@ -2,18 +2,14 @@ from fastapi import FastAPI
 from app.controllers import log_controller, alert_controller
 from elasticsearch import Elasticsearch
 from utils import normalize  # Para la normalización de logs
-import rules.rules as rules
+from utils import elasticsearch 
+from rules import rules
 import threading
 import time
 import webbrowser
 
 
-# Conexión a Elasticsearch
-es = Elasticsearch(
-    "https://localhost:9200",
-    basic_auth=('elastic', 'Y07U0Mmu7Z7+MpVfQJjf'),
-    verify_certs=False  
-)
+es = elasticsearch.connect_elasticsearch()
 
 # Crear instancia de FastAPI
 app = FastAPI()
@@ -42,16 +38,25 @@ RULES_CONFIG = {
         "log_size": 100
     },
     "privilege_changes": {
-        "function": rules.check_privilege_changes,
+        "function": rules.check_privilege_change,
         "devices": None,  # Se aplica a todos los dispositivos
         "log_size": 200
     },
     "anomalous_traffic": {
-        "function": rules.check_anomalous_traffic,
+        "function": rules.check_suspicious_traffic,
         "devices": None,
         "log_size": 50
     },
-    # Agregar más reglas con sus configuraciones aquí...
+    "system_errors": {
+        "function": rules.check_system_errors,
+        "devices": None,
+        "log_size": 50
+    },
+    "snort_alert": {
+        "function": rules.check_snort_alert,
+        "devices": None,
+        "log_size": 50
+    },
 }
 
 
@@ -143,15 +148,13 @@ def start_fastapi_server():
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
 def open_user_interface():
-    webbrowser.open("http://localhost:3000")
+    webbrowser.open("http://localhost:8000")
 
 def main():
     # Iniciar la normalización y guardado de logs en un hilo separado
     log_thread = threading.Thread(target=start_log_monitoring, daemon=True)
     log_thread.start()
 
-    # Aquí puedes agregar la lógica para abrir la interfaz de usuario.
-    # Supongamos que se llama a 'open_user_interface()' cuando el usuario inicia sesión o abre el programa.
     open_user_interface()
 
     # Esperar a que el usuario decida iniciar el servidor FastAPI

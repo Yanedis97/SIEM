@@ -32,7 +32,7 @@ class LogNormalizer:
                 return log_data
             
         # Manejar logs no reconocidos
-        return {"raw_log": line, "type": "unrecognized"}
+        return {"raw_log": line, "type": "unrecognized", "msg": line.strip()}
     
     def save_logs_to_elasticsearch(self, logs):
         """
