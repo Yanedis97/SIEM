@@ -21,7 +21,7 @@ app.include_router(alert_controller.router, prefix="/alerts", tags=["Alerts"])
 INDEX = "logs-*"
 
 # Intervalo para leer los logs (en segundos)
-READ_INTERVAL = 30
+READ_INTERVAL = 5
 
 # Último timestamp procesado (puede iniciarse como 'now-1d' o leerlo de la base de datos)
 last_timestamp = "now-1d"
@@ -125,6 +125,7 @@ def process_rules(es):
     Procesa todas las reglas en hilos separados si es necesario.
     """
     threads = []
+    print("empieza a llamar todas las funciones")
     for rule_name, config in RULES_CONFIG.items():
         thread = threading.Thread(target=process_rule, args=(rule_name, config, es))
         thread.start()
@@ -142,12 +143,12 @@ def normalize_and_save_logs(es):
 
 
 def start_log_monitoring():
-    global last_timestamp
-    normalize_and_save_logs(es)  # Iniciar normalización y guardado en un hilo separado
-
+    global last_timestamp  # Iniciar normalización y guardado en un hilo separado
+    print("inicia monitoreo")
     try:
         while True:
             # Leer nuevos logs de Elasticsearch y procesar reglas
+            print("procesa reglas")
             process_rules(es, last_timestamp)
 
             # Actualizar el timestamp al último log procesado
@@ -169,6 +170,7 @@ def open_user_interface():
     webbrowser.open("http://localhost:8000")
 
 def main():
+    normalize_and_save_logs(es)
     # Iniciar la normalización y guardado de logs en un hilo separado
     log_thread = threading.Thread(target=start_log_monitoring, daemon=True)
     log_thread.start()

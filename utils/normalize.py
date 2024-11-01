@@ -1,6 +1,7 @@
 import uuid
 import re
 import json
+from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
@@ -13,6 +14,7 @@ class LogHandler(FileSystemEventHandler):
         if event.src_path.endswith(".log"):
             print(f"Archivo modificado: {event.src_path}")
             self.normalizer.normalize_file(event.src_path)
+
 
 class LogNormalizer:
     def __init__(self, es):
@@ -28,13 +30,29 @@ class LogNormalizer:
             if match:
                 log_data = match.groupdict()
                 log_data['type'] = log_type
+
                 if 'timestamp' not in log_data:
-                    log_data['timestamp'] = "Desconocido"  # Default timestamp si no existe
+                    log_data['timestamp'] = "Desconocido"
+                else:
+                    # validar formato de fecha
+                    try:
+                        # formato correcto es ISO 8601
+                        datetime.fromisoformat(log_data['timestamp'])
+                    except ValueError:
+                        # Si falla, intentamos convertirlo desde el formato no ISO
+                        try:
+                            timestamp_str = log_data['timestamp']
+                            #si el formato es: "Oct 10 21:18:25"
+                            log_data['timestamp'] = datetime.strptime(timestamp_str, "%b %d %H:%M:%S").isoformat()
+                        except ValueError as e:
+                            print(f"Error al parsear timestamp: {e}, valor original: {timestamp_str}")
+                            log_data['timestamp'] = "Desconocido"
+
                 return log_data
 
         # Logs no reconocidos
         return {"raw_log": line, "type": "unrecognized", "msg": line.strip()}
-    
+
     def save_logs_to_elasticsearch(self, logs):
         """
         Guarda los logs normalizados en Elasticsearch.
