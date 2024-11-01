@@ -1,6 +1,5 @@
 from fastapi import FastAPI
 from app.controllers import log_controller, alert_controller
-from elasticsearch import Elasticsearch
 from utils import normalize  # Para la normalización de logs
 from utils import elasticsearch 
 from rules import rules
@@ -31,58 +30,66 @@ last_timestamp = "now-1d"
 FILTERED_DEVICES = ["device1", "device2", "192.168.1.10"]
 
 # Configuración de reglas con sus dispositivos específicos o None para aplicar a todos
+# Configuración de reglas con sus dispositivos específicos o None para aplicar a todos
 RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
         "devices": None,
-        "log_size": 100
+        "log_size": 100,
+        "time_window": "now-2d"  # Últimos 2 días
     },
     "privilege_changes": {
         "function": rules.check_privilege_change,
-        "devices": None,  # Se aplica a todos los dispositivos
-        "log_size": 200
+        "devices": None,
+        "log_size": 200,
+        "time_window": "now-3h"  # Últimas 3 horas
     },
     "anomalous_traffic": {
         "function": rules.check_suspicious_traffic,
         "devices": None,
-        "log_size": 50
+        "log_size": 50,
+        "time_window": "now-1d"  # Últimas 24 horas
     },
     "system_errors": {
         "function": rules.check_system_errors,
         "devices": None,
-        "log_size": 50
+        "log_size": 50,
+        "time_window": "now-1d"  # Últimas 24 horas
     },
     "snort_alert": {
         "function": rules.check_snort_alert,
         "devices": None,
-        "log_size": 50
+        "log_size": 50,
+        "time_window": None  # Maneja su propio proceso de recuperación
     },
 }
 
 
-def fetch_logs(es, index, last_timestamp, filtered_devices=None, size=100):
+def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     """
-    Obtiene los logs de Elasticsearch a partir de un timestamp dado y opcionalmente filtra por dispositivos.
+    Obtiene los logs de Elasticsearch a partir de un tiempo dado y opcionalmente filtra por dispositivos.
     """
     query = {
         "size": size,
         "query": {
             "bool": {
-                "must": [
-                    {
-                        "range": {
-                            "@timestamp": {
-                                "gt": last_timestamp
-                            }
-                        }
-                    }
-                ]
+                "must": []
             }
         },
         "sort": [
             {"@timestamp": {"order": "asc"}}
         ]
     }
+
+    # Si se proporciona un time_window, ajusta la consulta
+    if time_window:
+        query["query"]["bool"]["must"].append({
+            "range": {
+                "@timestamp": {
+                    "gte": time_window  # Usa 'gte' para obtener logs desde el tiempo especificado
+                }
+            }
+        })
 
     if filtered_devices:
         query["query"]["bool"]["must"].append({
@@ -96,25 +103,36 @@ def fetch_logs(es, index, last_timestamp, filtered_devices=None, size=100):
     return logs
 
 
-def process_rules(es, last_timestamp):
+def process_rule(rule_name, config, es):
     """
-    Procesa los logs según las configuraciones definidas en RULES_CONFIG.
+    Procesa una regla específica según la configuración definida.
     """
-    for rule_name, config in RULES_CONFIG.items():
-        print(f"Procesando regla: {rule_name}")
+    print(f"Procesando regla: {rule_name}")
 
-        # Obtener logs según configuración de la regla
-        logs = fetch_logs(
-            es=es,
-            index=INDEX,
-            last_timestamp=last_timestamp,
-            filtered_devices=config["devices"],
-            size=config["log_size"]
-        )
+    logs = fetch_logs(
+        es=es,
+        index=INDEX,
+        time_window=config["time_window"],  # Pasa el tiempo específico
+        filtered_devices=config["devices"],
+        size=config["log_size"]
+    )
         
-        # Llamar a la función de la regla con los logs obtenidos
-        config["function"](logs, es)
+    # Llamar a la función de la regla con los logs obtenidos
+    config["function"](logs, es)
 
+def process_rules(es):
+    """
+    Procesa todas las reglas en hilos separados si es necesario.
+    """
+    threads = []
+    for rule_name, config in RULES_CONFIG.items():
+        thread = threading.Thread(target=process_rule, args=(rule_name, config, es))
+        thread.start()
+        threads.append(thread)
+
+    # Esperar a que todas las reglas terminen de procesarse
+    for thread in threads:
+        thread.join()
 
 def normalize_and_save_logs(es):
     """

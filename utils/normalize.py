@@ -3,7 +3,6 @@ import re
 import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-#from main import save_logs_to_elasticsearch
 
 
 class LogHandler(FileSystemEventHandler):
@@ -29,9 +28,11 @@ class LogNormalizer:
             if match:
                 log_data = match.groupdict()
                 log_data['type'] = log_type
+                if 'timestamp' not in log_data:
+                    log_data['timestamp'] = "Desconocido"  # Default timestamp si no existe
                 return log_data
-            
-        # Manejar logs no reconocidos
+
+        # Logs no reconocidos
         return {"raw_log": line, "type": "unrecognized", "msg": line.strip()}
     
     def save_logs_to_elasticsearch(self, logs):
@@ -39,13 +40,14 @@ class LogNormalizer:
         Guarda los logs normalizados en Elasticsearch.
         """
         for log in logs:
-            log_json = json.dumps(log)
-            # Verificar si el ID del log ya existe en Elasticsearch
-            existing_log = self.elasticsearch.get(index="logs", id=log["id"], ignore=[404])
+            # Asegurar que se tiene timestamp antes de almacenar
+            if 'timestamp' not in log or log['timestamp'] == "Desconocido":
+                print("Timestamp faltante en log, omitiendo:", log)
+                continue
 
-            # Si el log no existe, lo guardamos
-            if not existing_log['found']:    
-                self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
+            log_json = json.dumps(log)
+            # Usar el UUID como _id directamente en Elasticsearch para evitar duplicados
+            self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
 
     def normalize_file(self, input_file):
         with open(input_file, "r") as f:
@@ -71,7 +73,7 @@ def start_monitoring(log_directory, es):
     normalizer = LogNormalizer(es)
     # Agregar los patrones de normalización conocidos
     normalizer.add_pattern(
-        r'<(?P<pri>\d+)>.*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+?) \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)? -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)?',
+        r'<(?P<pri>\d+)>(?P<timestamp>\S+ +\d+ \d+:\d+:\d+).*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+?) \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)? -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)?',
         'snort'
     )
 
@@ -80,25 +82,11 @@ def start_monitoring(log_directory, es):
         'router'
     )
 
-    normalizer.add_pattern(
-        r'<(?P<pri>\d+)>.*CRON\[\d+\]: (?P<msg>.+)',
-        'cron'
-    )
-
-    normalizer.add_pattern(
-        r'<(?P<pri>\d+)>.*snapd\[\d+\]: (?P<msg>.+)',
-        'snapd'
-    )
-
     event_handler = LogHandler(normalizer)
     observer = Observer()
     observer.schedule(event_handler, path=log_directory, recursive=False)
     observer.start()
     print(f"Monitoreando cambios en el directorio: {log_directory}")
-
-    #para ver la informacion que esta guardada en el elasticsearch
-    # response = es.search(index="logs", body={"query": {"match_all": {}}})
-    # print("Resultados de la consulta:", response)
 
     try:
         while True:
