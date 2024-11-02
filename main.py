@@ -18,7 +18,9 @@ app.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
 app.include_router(alert_controller.router, prefix="/alerts", tags=["Alerts"])
 
 # Índice de logs en Elasticsearch
-INDEX = "logs-*"
+INDEX = "logs"
+if not es.indices.exists(index=INDEX):
+    es.indices.create(index=INDEX)
 
 # Intervalo para leer los logs (en segundos)
 READ_INTERVAL = 5
@@ -142,19 +144,24 @@ def normalize_and_save_logs(es):
     normalize.start_monitoring('C:\\logs', es)  # Pasa la instancia de Elasticsearch aquí
 
 
-def start_log_monitoring():
+def start_process_rules():
     global last_timestamp  # Iniciar normalización y guardado en un hilo separado
     print("inicia monitoreo")
     try:
         while True:
             # Leer nuevos logs de Elasticsearch y procesar reglas
-            print("procesa reglas")
-            process_rules(es, last_timestamp)
+            try:
+                process_rules(es)
+            except Exception as e:
+                print(f"Error al procesar reglas: {e}")
 
             # Actualizar el timestamp al último log procesado
-            latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
-            if latest_logs:
-                last_timestamp = latest_logs[-1]['_source']['@timestamp']
+            try:
+                latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
+                if latest_logs:
+                    last_timestamp = latest_logs[-1]['_source']['@timestamp']
+            except Exception as e:
+                print(f"Error al obtener logs: {e}")
 
             # Esperar antes de leer los logs nuevamente
             time.sleep(READ_INTERVAL)
@@ -170,9 +177,11 @@ def open_user_interface():
     webbrowser.open("http://localhost:8000")
 
 def main():
+    # Iniciar normalización y guardado de logs
     normalize_and_save_logs(es)
-    # Iniciar la normalización y guardado de logs en un hilo separado
-    log_thread = threading.Thread(target=start_log_monitoring, daemon=True)
+
+    # Iniciar procesamiento de reglas de correlación
+    log_thread = threading.Thread(target=start_process_rules, daemon=True)
     log_thread.start()
 
     open_user_interface()
