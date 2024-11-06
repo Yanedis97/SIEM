@@ -79,7 +79,7 @@ def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
             }
         },
         "sort": [
-            {"@timestamp": {"order": "asc"}}
+            {"timestamp": {"order": "asc"}}
         ]
     }
 
@@ -87,7 +87,7 @@ def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     if time_window:
         query["query"]["bool"]["must"].append({
             "range": {
-                "@timestamp": {
+                "timestamp": {
                     "gte": time_window  # Usa 'gte' para obtener logs desde el tiempo especificado
                 }
             }

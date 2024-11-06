@@ -1,6 +1,7 @@
 import uuid
 import re
 import json
+import time
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -20,6 +21,7 @@ class LogNormalizer:
     def __init__(self, es):
         self.elasticsearch = es
         self.patterns = []
+        self.processed_lines = {}  # Diccionario para guardar el progreso de cada archivo
 
     def add_pattern(self, pattern, log_type):
         self.patterns.append((pattern, log_type))
@@ -34,16 +36,17 @@ class LogNormalizer:
                 if 'timestamp' not in log_data:
                     log_data['timestamp'] = "Desconocido"
                 else:
-                    # validar formato de fecha
                     try:
-                        # formato correcto es ISO 8601
                         datetime.fromisoformat(log_data['timestamp'])
                     except ValueError:
-                        # Si falla, intentamos convertirlo desde el formato no ISO
                         try:
                             timestamp_str = log_data['timestamp']
-                            #si el formato es: "Oct 10 21:18:25"
-                            log_data['timestamp'] = datetime.strptime(timestamp_str, "%b %d %H:%M:%S").isoformat()
+                            
+                            # Agregar el año actual si no está presente
+                            current_year = datetime.now().year
+                            timestamp_with_year = f"{current_year} {timestamp_str}"
+
+                            log_data['timestamp'] = datetime.strptime(timestamp_with_year, "%Y %b %d %H:%M:%S").isoformat()
                         except ValueError as e:
                             print(f"Error al parsear timestamp: {e}, valor original: {timestamp_str}")
                             log_data['timestamp'] = "Desconocido"
@@ -53,43 +56,41 @@ class LogNormalizer:
         # Logs no reconocidos
         return {"raw_log": line, "type": "unrecognized", "msg": line.strip()}
 
+
     def save_logs_to_elasticsearch(self, logs):
-        """
-        Guarda los logs normalizados en Elasticsearch.
-        """
         for log in logs:
-            # Asegurar que se tiene timestamp antes de almacenar
             if 'timestamp' not in log or log['timestamp'] == "Desconocido":
                 print("Timestamp faltante en log, omitiendo:", log)
                 continue
 
             log_json = json.dumps(log)
-            # Usar el UUID como _id directamente en Elasticsearch para evitar duplicados
             self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
+            print(">>>>Guardado: ", log_json)
 
     def normalize_file(self, input_file):
+        # Leer el archivo desde la última posición procesada
+        last_position = self.processed_lines.get(input_file, 0)
+
         with open(input_file, "r") as f:
-            lines = f.readlines()
+            f.seek(last_position)  # Ir a la última posición procesada
 
             normalized_logs = []
-            for line in lines:
+            for line in f:
                 normalized_log = self.normalize_line(line)
                 print(f"normalize_log: {normalized_log}")
 
                 if normalized_log is not None:
-                    # Generar un UUID único para el log
                     log_id = str(uuid.uuid4())
                     normalized_log["id"] = log_id
-
                     normalized_logs.append(normalized_log)
 
-            # Guardar los logs en Elasticsearch (evitar duplicados basados en ID)
             self.save_logs_to_elasticsearch(normalized_logs)
+            # Guardar la posición actual del archivo
+            self.processed_lines[input_file] = f.tell()
 
 
 def start_monitoring(log_directory, es):
     normalizer = LogNormalizer(es)
-    # Agregar los patrones de normalización conocidos
     normalizer.add_pattern(
         r'<(?P<pri>\d+)>(?P<timestamp>\S+ +\d+ \d+:\d+:\d+).*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+?) \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)? -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)?',
         'snort'
@@ -108,7 +109,7 @@ def start_monitoring(log_directory, es):
 
     try:
         while True:
-            pass  # Mantener el hilo activo
+            time.sleep(1)  # Reducir la carga de CPU y mantener el hilo activo
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
