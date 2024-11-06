@@ -7,7 +7,7 @@ def get_all_alerts(page: int = 1, size: int = 10):
     try:
         # Usamos `from` y `size` para paginar los resultados
         start_from = (page - 1) * size
-        result = es.search(index="alerts", size=size, from_=start_from)
+        result = es.search(index="alerts", size=size, from_=start_from, sort=[{"timestamp": {"order": "desc"}}])
         alerts = [hit['_source'] for hit in result['hits']['hits']]
         return alerts
     except Exception as e:
@@ -17,7 +17,7 @@ def get_all_alerts(page: int = 1, size: int = 10):
 def get_realtime_alert():
     try:
         # Filtramos por las alertas más recientes en tiempo real
-        result = es.search(index="alerts", size=1, sort="timestamp:desc")
+        result = es.search(index="alerts", size=1, sort=[{"timestamp": {"order": "desc"}}])
         if result['hits']['hits']:
             alert = result['hits']['hits'][0]['_source']
             return alert

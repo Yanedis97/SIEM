@@ -8,7 +8,7 @@ def get_all_logs(page: int = 1, size: int = 10):
         # Calcular el offset basado en el número de página y el tamaño de página
         offset = (page - 1) * size
         # Realizar la consulta a Elasticsearch con paginación
-        result = es.search(index="logs", from_=offset, size=size)
+        result = es.search(index="logs", from_=offset, size=size, sort=[{"timestamp": {"order": "desc"}}])
         logs = [hit['_source'] for hit in result['hits']['hits']]
         return logs
     except Exception as e:
