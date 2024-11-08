@@ -1,6 +1,6 @@
 # auth.py
 from sqlalchemy.orm import Session
-from models.users import Users
+from app.models.users import Users
 import bcrypt
 
 def create_user(db: Session, username: str, email: str, password: str, role: str):

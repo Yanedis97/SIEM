@@ -16,7 +16,7 @@ app = FastAPI()
 # Registrar los controladores
 app.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
 app.include_router(alert_controller.router, prefix="/alerts", tags=["Alerts"])
-app.include_router(login_controller.router, prefix="/", tags=["Login"])
+app.include_router(login_controller.router, prefix="/users", tags=["Users"])
 
 # Índice de logs en Elasticsearch
 INDEX = "logs"
