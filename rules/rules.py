@@ -202,18 +202,46 @@ def process_snort_log(log_entry, es):
         alert_message = log_entry['_source'].get('msg', 'No message available')
         source_ip = log_entry['_source'].get('src_ip', 'IP desconocida')
         dest_ip = log_entry['_source'].get('dst_ip', 'IP desconocida')
+        protocol = log_entry['_source'].get('protocol', 'Protocolo desconocido')
+        sid = log_entry['_source'].get('sid', 'SID desconocido')
+        
+        # Lógica de filtrado por SID y msg
+        if sid == "1000001":  # Syn Flood Attack (DoS)
+            alert_type = "Ataque SYN Flood (DoS)"
+        elif sid == "1000002":  # Nmap Scan (Exploración de Puertos)
+            alert_type = "Exploración de Puertos (Nmap)"
+        elif sid == "1000003":  # SQL Injection
+            alert_type = "Intento de Inyección SQL"
+        elif sid == "1000004":  # XSS Attack
+            alert_type = "Ataque XSS (Cross-Site Scripting)"
+        elif sid == "1000005":  # Brute Force Attack
+            alert_type = "Ataque de Fuerza Bruta (SSH)"
+        elif sid == "1000006":  # SMB Exploit (EternalBlue)
+            alert_type = "Exploit SMB (EternalBlue)"
+        elif sid == "1000007":  # Phishing
+            alert_type = "Intento de Phishing"
+        elif sid == "1000008":  # Malware Communication
+            alert_type = "Comunicación de Malware"
+        elif sid == "1000009":  # ARP Spoofing
+            alert_type = "Ataque ARP Spoofing"
+        elif sid == "1000010":  # DNS Tunneling
+            alert_type = "Detección de DNS Tunneling"
+        else:
+            alert_type = "Alerta desconocida"
 
         timestamp_str = log_entry['_source'].get('timestamp')
         if timestamp_str:
             try:
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                alert_id = f"snort_alert_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+                alert_id = f"snort_alert_{sid}_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
                 if not is_alert_active(alert_id):
-                    message = f"Alerta de Snort: {alert_message} entre {source_ip} y {dest_ip}"
+                    message = f"{alert_type}: {alert_message} desde {source_ip} hacia {dest_ip} usando {protocol}"
                     context = {
                         "source_ip": source_ip,
                         "dest_ip": dest_ip,
                         "alert_message": alert_message,
+                        "protocol": protocol,
+                        "alert_type": alert_type,
                         "timestamp": timestamp.isoformat()
                     }
                     activate_alert(alert_id, message, es, context)

@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from app.controllers import log_controller, alert_controller
+from app.controllers import log_controller, alert_controller, login_controller
 from utils import normalize  # Para la normalización de logs
 from utils import elasticsearch 
 from rules import rules
@@ -16,6 +16,7 @@ app = FastAPI()
 # Registrar los controladores
 app.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
 app.include_router(alert_controller.router, prefix="/alerts", tags=["Alerts"])
+app.include_router(login_controller.router, prefix="/", tags=["Login"])
 
 # Índice de logs en Elasticsearch
 INDEX = "logs"

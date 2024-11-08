@@ -17,6 +17,19 @@ def get_all_alerts(page: int = 1, size: int = 10):
 def get_realtime_alert():
     try:
         # Filtramos por las alertas más recientes en tiempo real
+        result = es.search(index="alerts", size=100, sort=[{"timestamp": {"order": "desc"}}])
+        if result['hits']['hits']:
+            alert = result['hits']['hits'][0]['_source']
+            return alert
+        else:
+            return {"message": "No hay alertas en tiempo real"}
+    except Exception as e:
+        raise e
+    
+# Servicio para actualizar el estado de la alerta
+def update_alert_status():
+    try:
+        # Filtramos por las alertas más recientes en tiempo real
         result = es.search(index="alerts", size=1, sort=[{"timestamp": {"order": "desc"}}])
         if result['hits']['hits']:
             alert = result['hits']['hits'][0]['_source']

@@ -1,31 +1,75 @@
-# auth.py
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from models.users import Users
-import bcrypt
+from app.services.login_service import create_user, authenticate_user
+from database.db_connection import get_db  # Asegúrate de tener una función para obtener la sesión de la BD
+from sqlalchemy.exc import IntegrityError
 
-def create_user(db: Session, username: str, password: str):
-    # Hashear la contraseña
-    hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
-    
-    # Crear un nuevo usuario
-    new_user = Users(username=username, password_hash=hashed_password.decode('utf-8'))
-    
-    # Agregar el nuevo usuario a la base de datos
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    return new_user
+router = APIRouter()
 
-def authenticate_user(db: Session, username: str, password: str):
-    # Buscar el usuario en la base de datos
-    user = db.query(Users).filter(Users.username == username).first()
+# Pydantic model para la solicitud de creación de usuario
+class CreateUserRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    role: str = "Viewer"  # Rol por defecto es 'Viewer'
+
+# Pydantic model para la respuesta de creación de usuario
+class CreateUserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    role: str
+
+# Pydantic model para la solicitud de login
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+# Pydantic model para la respuesta de login (token JWT u otra forma de respuesta)
+class LoginResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+
+# API para crear un nuevo usuario
+@router.post("/create_user", response_model=CreateUserResponse)
+def create_new_user(request: CreateUserRequest, db: Session = Depends(get_db)):
+    try:
+        # Crear el nuevo usuario
+        new_user = create_user(
+            db=db, 
+            username=request.username, 
+            email=request.email, 
+            password=request.password, 
+            role=request.role
+        )
+        
+        # Devolver la respuesta con los datos del nuevo usuario
+        return {
+            "id": new_user.id,
+            "username": new_user.username,
+            "email": new_user.email,
+            "role": new_user.role
+        }
     
-    if user is None:
-        return False
+    except IntegrityError:
+        raise HTTPException(status_code=400, detail="Username or email already exists.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating user: {str(e)}")
+
+
+# API para autenticación de usuario (login)
+@router.post("/login", response_model=LoginResponse)
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    user = authenticate_user(db=db, email=request.email, password=request.password)
     
-    # Verificar la contraseña
-    if bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
-        return user
-    else:
-        return False
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    # Devolver los datos del usuario (puedes incluir un token si usas JWT)
+    return {
+        "id": user.id,
+        "username": user.username,
+        "role": user.role
+    }
