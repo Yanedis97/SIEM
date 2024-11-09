@@ -1,4 +1,3 @@
-# auth.py
 from sqlalchemy.orm import Session
 from app.models.users import Users
 import bcrypt

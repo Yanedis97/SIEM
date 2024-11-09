@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.services.login_service import create_user, authenticate_user
-from database.db_connection import get_db  # Asegúrate de tener una función para obtener la sesión de la BD
+from database.db_connection import get_db
 from sqlalchemy.exc import IntegrityError
 
 router = APIRouter()

@@ -1,0 +1,33 @@
+-- Crear una nueva tabla `alerts_temp` con `log_ids` como `TEXT`
+CREATE TABLE alerts_temp (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  second_id TEXT NOT NULL,
+  log_ids TEXT NOT NULL DEFAULT '[]',
+  alert_type TEXT NOT NULL,
+  message TEXT,
+  source_ip TEXT,
+  dest_ip TEXT,
+  severity TEXT,
+  context TEXT,
+  status INTEGER,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Eliminar la tabla original
+DROP TABLE alerts;
+
+-- Renombrar `alerts_temp` a `alerts`
+ALTER TABLE alerts_temp RENAME TO alerts;
+
+
+CREATE TABLE alert_status (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL
+);
+
+-- Insertamos los tres estados posibles
+INSERT INTO alert_status (code,name) VALUES 
+  ('active', 'Activa'), 
+  ('revised', 'Revisada'), 
+  ('ended','Finalizada');

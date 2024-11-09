@@ -1,33 +1,21 @@
 from datetime import datetime, timedelta
 from collections import defaultdict
-# from flask_socketio import SocketIO
-# from main import app
-
-# Inicializar SocketIO
-# socketio = SocketIO(app)
+from database.db_connection import SessionLocal
+from app.models.alerts import Alerts
 
 # Parámetros de reglas de correlación
-BRUTE_FORCE_THRESHOLD = 5   # Número de intentos fallidos para generar alerta
-BRUTE_FORCE_INTERVAL = 10   # Ventana de tiempo en minutos para considerar intentos fallidos
-TIME_RELATION_THRESHOLD = 60 # Ventana de tiempo en minutos para eventos relacionados
-APT_THRESHOLD = 5  # Número de eventos
-APT_TIMEFRAME = 60  # Ventana de tiempo en minutos
-WORK_HOURS_START = 9  # Horas laborales inician a las 9 AM
-WORK_HOURS_END = 17  # Horas laborales terminan a las 5 PM
-SYSTEM_EVENT_TIMEFRAME = 5  # Ventana de tiempo en minutos
-RECON_THRESHOLD = 3
-EXPLOITATION_THRESHOLD = 2
-unauthorized_access_threshold = 3
-suspicious_activity_threshold = 5
+TIME_RELATION_THRESHOLD = 5  # en minutos
+BRUTE_FORCE_THRESHOLD = 3    # Mínimo de intentos fallidos
+MAX_ATTEMPTS = 10            # Máximo de intentos fallidos permitidos
+SUSPICIOUS_TRAFFIC_THRESHOLD = 1000  # Umbral de eventos para tráfico sospechoso
+SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL = 500  # Umbral reducido para redes pequeñas
+TRAFFIC_WINDOW = timedelta(minutes=10)  # Ventana de tiempo de 10 minutos
 
-recon_tracker = defaultdict(list)  # Almacena eventos de reconocimiento
-exploit_tracker = defaultdict(list)  # Almacena intentos de explotación
-system_event_tracker = defaultdict(list)  # Almacena eventos de sistema
-access_tracker = defaultdict(list)  # Almacena intentos de acceso no autorizado
-activity_tracker = defaultdict(list) 
+
 login_tracker = defaultdict(list)  # Almacena intentos fallidos por IP
 event_tracker = defaultdict(list)  # Almacena eventos para correlacionar por IP
-apt_tracker = defaultdict(list)
+traffic_tracker = defaultdict(list) # Almacena eventos por dispositivo (IP de origen o dispositivo)
+
 active_alerts = {}  # Almacena alertas activas para evitar duplicación
 
 def clean_old_entries(ip, interval):
@@ -50,151 +38,171 @@ def is_alert_active(alert_id):
     """
     return alert_id in active_alerts
 
-def activate_alert(alert_id, message, es, context=None):
+def activate_alert(alert_id: str, message: str, context: dict = {}):
     """
     Activa una alerta y la guarda en el almacén temporal.
     """
     active_alerts[alert_id] = datetime.now()
 
     print(f"Alerta generada: {message}")
-    alert_data = {
-        "alert_id": alert_id,
-        "message": message,
-        "timestamp": datetime.now().isoformat(),
-        "status": "active",
-        "context": context if context else {}  # Incluye el contexto si está presente
-    }
-    es.index(index="alerts", body=alert_data)
-    # Enviar notificación al frontend (WebSocket)
-    # socketio.emit('new_alert', alert_data)
 
-def check_brute_force(logs, es):
-    # Revisar si el mensaje indica un intento fallido de login
+    session = SessionLocal()
+    try:
+        
+        alert_data = Alerts(
+            second_id = alert_id,
+            log_ids = str(context.get("log_ids",None)),  
+            alert_type = 1,  
+            message = message,
+            source_ip = context.get("source_ip",None),  
+            dest_ip = context.get("source_ip",None),
+            severity = 1,  
+            context = context,
+            status = 1,
+            created_at = datetime.now()
+        )
+
+        session.add(alert_data)
+        session.commit()
+    except Exception as e:
+        session.rollback()  # Si ocurre un error, revertir los cambios
+        print(f"Error al guardar la alerta: {e}")
+    finally:
+        session.close()
+        
+
+def check_brute_force(logs):
+    """
+    Detecta ataques de fuerza bruta basados en intentos fallidos en los logs de autenticación.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+        es_client: Cliente Elasticsearch
+    """
     for log in logs:
-        message = log['_source'].get('msg', '').lower()
-        if 'login fallido' in message or 'fuerza bruta' in message:
-            ip = log['_source'].get('src_ip', 'IP desconocida')
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        msg = log["_source"].get("msg", "")
+        
+        if "authentication failed" in msg.lower():  
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            login_tracker[src_ip].append(log_time)
+
+    for ip, timestamps in login_tracker.items():
+        clean_old_entries(ip, TIME_RELATION_THRESHOLD)
+
+        if len(timestamps) >= BRUTE_FORCE_THRESHOLD:
+            if len(timestamps) <= MAX_ATTEMPTS:
+                alert_id = f"brute_force_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                message = f"Posible ataque de fuerza bruta detectado desde la IP {ip}. {len(timestamps)} intentos fallidos en los últimos {TIME_RELATION_THRESHOLD} minutos."
+                context = {
+                    "log_ids": [log["_id"] for log in logs], 
+                    "source_ip": ip, 
+                    "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                activate_alert(alert_id, message, context)
+
+
+def check_privilege_change(logs):
+    """
+    Detecta cambios de privilegios en los logs.
+    Args:
+        logs: Logs extraídos de Elasticsearch.
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        msg = log["_source"].get("msg", "")
+        
+        if "privilege change" in msg.lower(): 
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
             
-            timestamp_str = log['_source'].get('timestamp')
-            if timestamp_str:
-                try:
-                    timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                    # Agregar la marca de tiempo al tracker de intentos fallidos de login
-                    login_tracker[ip].append(timestamp)
-                    clean_old_entries(ip, BRUTE_FORCE_INTERVAL)
-                    
-                    if len(login_tracker[ip]) >= BRUTE_FORCE_THRESHOLD:
-                        alert_id = f"brute_force_{ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-                        if not is_alert_active(alert_id):
-                            message = f"Posible ataque de fuerza bruta detectado desde {ip}"
-                            context = {
-                                "ip": ip,
-                                "failed_attempts": len(login_tracker[ip]),
-                                "timestamp": timestamp.isoformat()
-                            }
-                            activate_alert(alert_id, message, es, context)
-                except ValueError:
-                    print(f"Formato de fecha inválido en log: {timestamp_str}")
+            alert_id = f"privilege_change_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Cambio de privilegio detectado: {msg}. Log ID: {log['_id']}"
+            context = {
+                "log_ids": [log["_id"]],
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "msg": msg
+            }
+            activate_alert(alert_id, message, context)
 
-def check_privilege_change(logs, es):
+
+def check_suspicious_traffic(logs):
     """
-    Regla de correlación para detectar cambios de privilegios en usuarios.
+    Detecta tráfico anómalo en base a un umbral de eventos en una ventana de tiempo.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+        es_client: Cliente Elasticsearch
     """
     for log in logs:
-        try:
-            # Verificar si el mensaje indica un cambio de privilegios
-            message = log.get('_source', {}).get('msg', '').lower()
-            if 'cambio de privilegio' in message:
-                # Usar 'src_ip' como identificador del usuario
-                user_ip = log.get('_source', {}).get('src_ip', 'IP desconocida')
-                
-                # Obtener y convertir la marca de tiempo
-                timestamp_str = log.get('_source', {}).get('timestamp')
-                if timestamp_str:
-                    try:
-                        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                        
-                        # Crear el ID de alerta usando la IP del usuario y la marca de tiempo
-                        alert_id = f"privilege_change_{user_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-                        
-                        # Activar alerta si no hay una alerta activa con este ID
-                        if not is_alert_active(alert_id):
-                            message = f"Cambio de privilegios detectado desde la IP {user_ip}"
-                            context = {
-                                "user_ip": user_ip,
-                                "timestamp": timestamp.isoformat()
-                            }
-                            activate_alert(alert_id, message, es, context)
-                    except ValueError:
-                        print(f"Formato de fecha inválido en log: {timestamp_str}")
-        except Exception as e:
-            print(f"Error al procesar el log: {e}")
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        msg = log["_source"].get("msg", "")
+        
+        # Solo consideramos logs de dispositivos relevantes (Firewalls, routers)
+        if "firewall" in msg.lower() or "router" in msg.lower():
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            traffic_tracker[src_ip].append(log_time)
 
-def check_suspicious_traffic(logs, es):
+    # Limpiar entradas antiguas (en base a la ventana de 10 minutos)
+    for device_ip, timestamps in traffic_tracker.items():
+        clean_old_entries(device_ip, TRAFFIC_WINDOW)
+
+        # Verificar si el número de eventos supera el umbral
+        if len(timestamps) >= SUSPICIOUS_TRAFFIC_THRESHOLD:  # Red para redes grandes
+            alert_id = f"suspicious_traffic_{device_ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Tráfico sospechoso detectado desde la IP {device_ip}. Más de {SUSPICIOUS_TRAFFIC_THRESHOLD} eventos en los últimos 10 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs], 
+                "source_ip": device_ip, 
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+        
+        # Si es una red pequeña, se usa un umbral reducido (500 eventos)
+        elif len(timestamps) >= SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL:
+            alert_id = f"suspicious_traffic_{device_ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Tráfico sospechoso detectado desde la IP {device_ip}. Más de {SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL} eventos en los últimos 10 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs], 
+                "source_ip": device_ip, 
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def check_system_errors(logs):
     """
-    Regla de correlación para detectar tráfico sospechoso.
+    Detecta errores críticos en los logs del sistema y genera una alerta en tiempo real.
+    Args:
+        logs: Logs extraídos de Elasticsearch
     """
     for log in logs:
-        try:
-            # Obtener el mensaje (msg) y buscar patrones que indiquen tráfico sospechoso
-            message = log.get('_source', {}).get('msg', '').lower()
-            source_ip = log.get('_source', {}).get('src_ip')
-            dest_ip = log.get('_source', {}).get('dst_ip')
-            timestamp_str = log.get('_source', {}).get('timestamp')
+        timestamp = log["_source"].get("timestamp")
+        msg = log["_source"].get("msg", "")
+
+        # Considera solo los logs con errores críticos
+        if "critical error" in msg.lower():  # Esto puede depender de cómo se registran los errores en los logs
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
             
-            # Verificación de condiciones de tráfico sospechoso
-            if source_ip and dest_ip and timestamp_str:
-                if "sospechoso" in message:
-                    try:
-                        timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                        alert_id = f"suspicious_traffic_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
-                        
-                        if not is_alert_active(alert_id):
-                            message = f"Tráfico sospechoso detectado entre {source_ip} y {dest_ip}"
-                            context = {
-                                "source_ip": source_ip,
-                                "dest_ip": dest_ip,
-                                "timestamp": timestamp.isoformat()
-                            }
-                            activate_alert(alert_id, message, es, context)
-                    except ValueError:
-                        print(f"Formato de fecha inválido en log: {timestamp_str}")
-        except Exception as e:
-            print(f"Error al procesar el log: {e}")
+            alert_id = f"critical_error_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Error crítico detectado: {msg}. Log ID: {log['_id']}"
+            context = {
+                "log_ids": [log["_id"]], 
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "msg": msg
+            }
+            activate_alert(alert_id, message, context)
 
-def check_system_errors(logs, es):
-    """
-    Regla de correlación para detectar errores del sistema.
-    """
-    for log in logs:
-        try:
-            error_message = log.get('_source', {}).get('msg')
-            timestamp_str = log.get('_source', {}).get('timestamp')
-            
-            if error_message and timestamp_str:
-                timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
-                alert_id = f"system_error_{timestamp.strftime('%Y%m%d%H%M%S')}"
-                
-                if not is_alert_active(alert_id):
-                    message = f"Error del sistema detectado: {error_message}"
-                    context = {
-                        "error_message": error_message,
-                        "timestamp": timestamp.isoformat()
-                    }
-                    activate_alert(alert_id, message, es, context)
-        except Exception as e:
-            print(f"Error al procesar el log: {e}")
 
-def check_snort_alert(logs, es):
+def check_snort_alert(logs):
     """
     Regla de correlación para detectar alertas de Snort.
     """
     print(">>>>> Entra en Regla de correlación para detectar alertas de Snort.")
     
     for log in logs:
-        process_snort_log(log, es)
+        process_snort_log(log)
 
-def process_snort_log(log_entry, es):
+def process_snort_log(log_entry):
     """
     Procesa un único registro de log para detectar alertas de Snort.
     """
@@ -234,6 +242,8 @@ def process_snort_log(log_entry, es):
             try:
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
                 alert_id = f"snort_alert_{sid}_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
+                
+                # Verifica si la alerta ya está activa para evitar duplicación
                 if not is_alert_active(alert_id):
                     message = f"{alert_type}: {alert_message} desde {source_ip} hacia {dest_ip} usando {protocol}"
                     context = {
@@ -244,7 +254,174 @@ def process_snort_log(log_entry, es):
                         "alert_type": alert_type,
                         "timestamp": timestamp.isoformat()
                     }
-                    activate_alert(alert_id, message, es, context)
+                    activate_alert(alert_id, message, context)
             except ValueError:
                 print(f"Formato de fecha inválido en log: {timestamp_str}")
 
+
+def check_time_related_events(logs):
+    """
+    Detecta más de 5 eventos desde una misma IP en los últimos 5 minutos.
+    Args:
+        logs: Logs extraídos de Elasticsearch.
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        
+        log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+        event_tracker[src_ip].append(log_time)
+
+    # Limpiar entradas antiguas (basado en la ventana de 5 minutos)
+    for ip, timestamps in event_tracker.items():
+        clean_old_entries(ip, TIME_RELATION_THRESHOLD)
+
+        # Verificar si el número de eventos supera el umbral
+        if len(timestamps) > 5:
+            alert_id = f"time_related_events_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Más de 5 eventos detectados desde la IP {ip} en los últimos 5 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs], 
+                "source_ip": ip, 
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def check_apt(logs):
+    """
+    Detecta posibles APTs basados en el umbral de más de 20 eventos en un intervalo de 30 minutos.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    # Utiliza un diccionario para rastrear los eventos por dispositivo
+    apt_tracker = defaultdict(list)
+
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        device = log["_source"].get("device")  # Asumiendo que cada log tiene un campo 'device'
+
+        # Convertimos el timestamp a un objeto datetime
+        log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+        
+        # Añadir evento al rastreador de APT
+        apt_tracker[device].append(log_time)
+
+    # Limpiar entradas antiguas (más de 30 minutos)
+    for device, timestamps in apt_tracker.items():
+        clean_old_entries(device, 30)  # Limpiar registros mayores a 30 minutos
+
+        # Verificar si el número de eventos supera el umbral de 20 eventos en 30 minutos
+        if len(timestamps) > 20:
+            alert_id = f"apt_alert_{device}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Posible APT detectada en el dispositivo {device}. Más de 20 eventos en los últimos 30 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs],
+                "device": device,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def check_recon_activity(logs):
+    """
+    Detecta escaneos de red (recon) basados en múltiples intentos en un corto periodo de tiempo.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    recon_tracker = defaultdict(list)  # Para almacenar intentos de escaneo por IP y dispositivo
+    recon_threshold = 3  # Umbral mínimo de intentos para detectar un escaneo
+    recon_window = timedelta(minutes=3)  # Ventana de tiempo de 3 minutos
+
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        dest_ip = log["_source"].get("dest_ip")
+        msg = log["_source"].get("msg", "")
+        
+        # Considerar logs de routers y switches
+        if "router" in msg.lower() or "switch" in msg.lower():
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            recon_tracker[(src_ip, dest_ip)].append(log_time)
+
+    # Limpiar entradas antiguas (en base a la ventana de 3 minutos)
+    for (src_ip, dest_ip), timestamps in recon_tracker.items():
+        clean_old_entries((src_ip, dest_ip), 3)
+
+        # Verificar si el número de intentos supera el umbral
+        if len(timestamps) >= recon_threshold:
+            alert_id = f"recon_activity_{src_ip}_{dest_ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Posible escaneo de red detectado desde la IP {src_ip} hacia el dispositivo {dest_ip}. {len(timestamps)} intentos en los últimos 3 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs],
+                "source_ip": src_ip,
+                "dest_ip": dest_ip,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def check_exploitation_attempts(logs):
+    """
+    Detecta intentos de explotación en función de los logs de autenticación.
+    Umbral: Más de 3 intentos de explotación en un intervalo de 5 minutos.
+    
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        msg = log["_source"].get("msg", "")
+
+        # Filtramos los logs que contienen intentos de explotación
+        if "exploit attempt" in msg.lower():  # Este texto depende de cómo se logean los intentos de explotación
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            event_tracker[src_ip].append(log_time)
+
+    # Limpiar entradas antiguas para evitar acumular intentos fuera del intervalo
+    for ip, timestamps in event_tracker.items():
+        clean_old_entries(ip, TIME_RELATION_THRESHOLD)
+
+        # Verificar si el número de intentos supera el umbral
+        if len(timestamps) > BRUTE_FORCE_THRESHOLD:
+            alert_id = f"exploitation_attempt_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Intentos de explotación detectados desde la IP {ip}. Más de {BRUTE_FORCE_THRESHOLD} intentos fallidos en los últimos 5 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs],  # Contexto con los IDs de los logs relevantes
+                "source_ip": ip,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def check_unauthorized_access(logs):
+    """
+    Detecta intentos de acceso no autorizado basados en intentos fallidos de autenticación.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        msg = log["_source"].get("msg", "")
+
+        # Verificar si es un intento fallido de autenticación
+        if "authentication failed" in msg.lower():  # Ajusta esto según los logs específicos
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            login_tracker[src_ip].append(log_time)
+
+    # Limpiar entradas antiguas
+    for ip, timestamps in login_tracker.items():
+        clean_old_entries(ip, TIME_RELATION_THRESHOLD)  # Limpiar los registros de más de 3 minutos
+
+        # Verificar si hay más de 5 intentos fallidos en los últimos 3 minutos
+        if len(timestamps) > BRUTE_FORCE_THRESHOLD:
+            alert_id = f"unauthorized_access_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Acceso no autorizado detectado desde la IP {ip}. Más de 5 intentos fallidos en los últimos 3 minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs],
+                "source_ip": ip,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
