@@ -13,6 +13,7 @@ class CreateUserRequest(BaseModel):
     email: str
     password: str
     role: str = "Viewer"  # Rol por defecto es 'Viewer'
+    user_id: int
 
 # Pydantic model para la respuesta de creación de usuario
 class CreateUserResponse(BaseModel):
@@ -42,16 +43,20 @@ def create_new_user(request: CreateUserRequest, db: Session = Depends(get_db)):
             username=request.username, 
             email=request.email, 
             password=request.password, 
-            role=request.role
+            role=request.role,
+            user_id=request.user_id
         )
-        
-        # Devolver la respuesta con los datos del nuevo usuario
-        return {
-            "id": new_user.id,
-            "username": new_user.username,
-            "email": new_user.email,
-            "role": new_user.role
-        }
+
+        if not new_user:
+            raise HTTPException(status_code=400, detail="No tiene permisos para realizar esta acción.")
+        else:
+            # Devolver la respuesta con los datos del nuevo usuario
+            return {
+                "id": new_user.id,
+                "username": new_user.username,
+                "email": new_user.email,
+                "role": new_user.role
+            }
     
     except IntegrityError:
         raise HTTPException(status_code=400, detail="Username or email already exists.")

@@ -1,11 +1,12 @@
-from fastapi import FastAPI
-from app.controllers import log_controller, alert_controller, login_controller
-from utils import normalize  # Para la normalización de logs
-from utils import elasticsearch 
-from rules import rules
-import threading
 import time
 import webbrowser
+from fastapi import FastAPI
+from app.controllers import log_controller, alert_controller, login_controller
+from utils import normalize
+from utils import elasticsearch 
+from rules import rules
+import asyncio
+import uvicorn
 
 
 es = elasticsearch.connect_elasticsearch()
@@ -29,46 +30,72 @@ READ_INTERVAL = 5
 # Último timestamp procesado (puede iniciarse como 'now-1d' o leerlo de la base de datos)
 last_timestamp = "now-1d"
 
-# Lista de dispositivos para reglas específicas
-FILTERED_DEVICES = ["device1", "device2", "192.168.1.10"]
-
-# Configuración de reglas con sus dispositivos específicos o None para aplicar a todos
-# Configuración de reglas con sus dispositivos específicos o None para aplicar a todos
+# Configuración de reglas específicas
 RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
-        "devices": None,
-        "log_size": 100,
-        "time_window": "now-2d"  # Últimos 2 días
+        "devices": ["auth_server"],
+        "log_size": 10,
+        "time_window": "now-5m"
     },
     "privilege_changes": {
         "function": rules.check_privilege_change,
-        "devices": None,
-        "log_size": 200,
-        "time_window": "now-3h"  # Últimas 3 horas
+        "devices": ["app_server", "idm_server"],
+        "log_size": 1,
+        "time_window": None  # En tiempo real
     },
     "anomalous_traffic": {
         "function": rules.check_suspicious_traffic,
-        "devices": None,
-        "log_size": 50,
-        "time_window": "now-1d"  # Últimas 24 horas
+        "devices": ["firewall", "router"],
+        "log_size": 1000,
+        "time_window": "now-10m"
     },
     "system_errors": {
         "function": rules.check_system_errors,
-        "devices": None,
-        "log_size": 50,
-        "time_window": "now-1d"  # Últimas 24 horas
+        "devices": ["os_server"],
+        "log_size": 1,
+        "time_window": None  # En tiempo real
     },
     "snort_alert": {
         "function": rules.check_snort_alert,
-        "devices": None,
-        "log_size": 50,
-        "time_window": None  # Maneja su propio proceso de recuperación
+        "devices": ["ids"],
+        "log_size": 1,
+        "time_window": None  # En tiempo real
     },
+    "time_related_events": {
+        "function": rules.check_time_related_events,
+        "devices": ["any_device"],
+        "log_size": 5,
+        "time_window": "now-5m"
+    },
+    "apt": {
+        "function": rules.check_apt,
+        "devices": ["critical_system", "network"],
+        "log_size": 20,
+        "time_window": "now-30m"
+    },
+    "recon_activity": {
+        "function": rules.check_recon_activity,
+        "devices": ["router", "switch"],
+        "log_size": 5,
+        "time_window": "now-3m"
+    },
+    "exploitation_attempts": {
+        "function": rules.check_exploitation_attempts,
+        "devices": ["server", "network_device"],
+        "log_size": 3,
+        "time_window": "now-5m"
+    },
+    "unauthorized_access": {
+        "function": rules.check_unauthorized_access,
+        "devices": ["auth_server"],
+        "log_size": 5,
+        "time_window": "now-3m"
+    }
 }
 
 
-def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
+async def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     """
     Obtiene los logs de Elasticsearch a partir de un tiempo dado y opcionalmente filtra por dispositivos.
     """
@@ -84,12 +111,11 @@ def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
         ]
     }
 
-    # Si se proporciona un time_window, ajusta la consulta
     if time_window:
         query["query"]["bool"]["must"].append({
             "range": {
                 "timestamp": {
-                    "gte": time_window  # Usa 'gte' para obtener logs desde el tiempo especificado
+                    "gte": time_window  # 'gte' para obtener logs desde el tiempo especificado
                 }
             }
         })
@@ -97,98 +123,93 @@ def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     if filtered_devices:
         query["query"]["bool"]["must"].append({
             "terms": {
-                "device_id.keyword": filtered_devices  # Asegúrate que este campo coincide con tus logs
+                "device_id.keyword": filtered_devices
             }
         })
 
-    response = es.search(index=index, body=query)
+    response = await es.search(index=index, body=query)
     logs = response['hits']['hits']
     return logs
 
 
-def process_rule(rule_name, config, es):
+async def process_rule(rule_name, config, es):
     """
     Procesa una regla específica según la configuración definida.
     """
     print(f"Procesando regla: {rule_name}")
 
-    logs = fetch_logs(
+    logs = await fetch_logs(
         es=es,
         index=INDEX,
-        time_window=config["time_window"],  # Pasa el tiempo específico
+        time_window=config["time_window"],
         filtered_devices=config["devices"],
         size=config["log_size"]
     )
         
     # Llamar a la función de la regla con los logs obtenidos
-    config["function"](logs, es)
+    config["function"](logs)
 
-def process_rules(es):
+async def process_rules(es):
     """
     Procesa todas las reglas en hilos separados si es necesario.
     """
-    threads = []
-    print("empieza a llamar todas las funciones")
     for rule_name, config in RULES_CONFIG.items():
-        thread = threading.Thread(target=process_rule, args=(rule_name, config, es))
-        thread.start()
-        threads.append(thread)
+        await process_rule(rule_name, config, es)
 
-    # Esperar a que todas las reglas terminen de procesarse
-    for thread in threads:
-        thread.join()
-
-def normalize_and_save_logs(es):
+async def normalize_and_save_logs(es):
     """
     Inicia la normalización y el guardado de logs en Elasticsearch.
     """
-    normalize.start_monitoring('C:\\logs', es)  # Pasa la instancia de Elasticsearch aquí
+    normalize.start_monitoring('C:\\logs', es)
 
+async def start_process_rules():
+    global last_timestamp
+    print("Inicia monitoreo")
+    #try:
+    while True:
+        try:
+            process_rules(es)
+        except Exception as e:
+            print(f"Error al procesar reglas: {e}")
 
-def start_process_rules():
-    global last_timestamp  # Iniciar normalización y guardado en un hilo separado
-    print("inicia monitoreo")
-    try:
-        while True:
-            # Leer nuevos logs de Elasticsearch y procesar reglas
-            try:
-                process_rules(es)
-            except Exception as e:
-                print(f"Error al procesar reglas: {e}")
+        try:
+            latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
+            if latest_logs:
+                last_timestamp = latest_logs[-1]['_source']['@timestamp']
+        except Exception as e:
+            print(f"Error al obtener logs: {e}")
+        
+        await asyncio.sleep(READ_INTERVAL)
 
-            # Actualizar el timestamp al último log procesado
-            try:
-                latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
-                if latest_logs:
-                    last_timestamp = latest_logs[-1]['_source']['@timestamp']
-            except Exception as e:
-                print(f"Error al obtener logs: {e}")
+    #except KeyboardInterrupt:
+    #    print("Deteniendo la ejecución...")
 
-            # Esperar antes de leer los logs nuevamente
-            time.sleep(READ_INTERVAL)
+async def start_fastapi_server():
+    """
+    Inicia el servidor FastAPI con Uvicorn.
+    """
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+    server = uvicorn.Server(config)
+    await server.serve()
 
-    except KeyboardInterrupt:
-        print("Deteniendo la ejecución...")
-
-def start_fastapi_server():
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 def open_user_interface():
     webbrowser.open("http://localhost:8000")
 
 def main():
-    # Iniciar normalización y guardado de logs
-    normalize_and_save_logs(es)
+    # Inicia los procesos en segundo plano con asyncio
+    loop = asyncio.get_event_loop()
 
-    # Iniciar procesamiento de reglas de correlación
-    log_thread = threading.Thread(target=start_process_rules, daemon=True)
-    log_thread.start()
+    # Normalización de logs en segundo plano
+    loop.create_task(normalize_and_save_logs(es))
+
+    # Monitoreo de reglas en segundo plano
+    loop.create_task(start_process_rules())
 
     open_user_interface()
 
-    # Esperar a que el usuario decida iniciar el servidor FastAPI
-    start_fastapi_server()  # Esto se ejecutará al hacer clic en el botón o ícono
+    # Inicia el servidor web
+    loop.run_until_complete(start_fastapi_server())
 
 if __name__ == "__main__":
     main()

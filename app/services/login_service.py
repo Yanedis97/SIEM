@@ -2,19 +2,24 @@ from sqlalchemy.orm import Session
 from app.models.users import Users
 import bcrypt
 
-def create_user(db: Session, username: str, email: str, password: str, role: str):
+def create_user(db: Session, username: str, email: str, password: str, role: str, user_id: int):
     # Hashear la contraseña
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     
-    # Crear un nuevo usuario
-    new_user = Users(username=username, email=email, password_hash=hashed_password.decode('utf-8'), role=role)
-    
-    # Agregar el nuevo usuario a la base de datos
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    
-    return new_user
+    user = db.query(Users).filter(Users.id == user, Users.role == "admin").first()
+
+    if user:
+        # Crear un nuevo usuario
+        new_user = Users(username=username, email=email, password_hash=hashed_password.decode('utf-8'), role=role)
+        
+        # Agregar el nuevo usuario a la base de datos
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        return new_user
+    else:
+        return False
 
 def authenticate_user(db: Session, email: str, password: str):
     # Buscar el usuario en la base de datos
