@@ -4,6 +4,9 @@ from app.services import alert_service
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
 import math
+from openpyxl import Workbook
+from fastapi.responses import StreamingResponse
+from io import BytesIO
 
 router = APIRouter()
 
@@ -131,5 +134,51 @@ def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session 
                 "created_at": updated_alert.created_at.isoformat()
             }
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/download-alerts")
+def download_alerts(db: Session = Depends(get_db)):
+    try:
+        # Obtiene todas las alertas sin paginación
+        alerts, _ = alert_service.get_all_alerts(db=db, page=1, size=1000)
+        
+        # Crear el archivo Excel en memoria
+        output = BytesIO()
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Alerts"
+
+        # Encabezados
+        headers = ["ID", "Second ID", "Log IDs", "Message", "Source IP", "Dest IP", "Severity", "Context", "Status", "Created At"]
+        sheet.append(headers)
+
+        # Agregar los datos de las alertas
+        for alert in alerts:
+            sheet.append([
+                alert.id,
+                alert.second_id,
+                alert.log_ids,
+                alert.message,
+                alert.source_ip,
+                alert.dest_ip,
+                alert.severity,
+                alert.context,
+                alert.status,
+                alert.created_at.isoformat()
+            ])
+
+        # Guardar el archivo Excel en el buffer de memoria
+        workbook.save(output)
+        output.seek(0)
+
+        # Preparar la respuesta con el archivo Excel
+        headers = {
+            "Content-Disposition": "attachment; filename=alerts_list.xlsx",
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        }
+        return StreamingResponse(output, headers=headers)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
