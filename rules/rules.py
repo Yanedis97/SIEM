@@ -10,11 +10,25 @@ MAX_ATTEMPTS = 10            # Máximo de intentos fallidos permitidos
 SUSPICIOUS_TRAFFIC_THRESHOLD = 1000  # Umbral de eventos para tráfico sospechoso
 SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL = 500  # Umbral reducido para redes pequeñas
 TRAFFIC_WINDOW = timedelta(minutes=10)  # Ventana de tiempo de 10 minutos
-
+MALWARE_ACTIVITY_THRESHOLD = 10  # Número de eventos para considerar como actividad sospechosa
+MALWARE_TIME_WINDOW = timedelta(minutes=10)
+FAILED_ATTEMPT_THRESHOLD = 5
+TIME_WINDOW = timedelta(minutes=15)
+TRANSFER_THRESHOLD = 1 * 1024 * 1024 * 1024  # 1 GB en bytes
+TIME_WINDOW = timedelta(minutes=10)
+INTERNAL_CONNECTIONS_THRESHOLD = 10  # Número mínimo de intentos
+TIME_WINDOW = timedelta(minutes=5)
+APPLICATION_EVENT_THRESHOLD = 3  # Umbral de eventos críticos de acceso fallido
+TIME_WINDOW = timedelta(minutes=5)
 
 login_tracker = defaultdict(list)  # Almacena intentos fallidos por IP
 event_tracker = defaultdict(list)  # Almacena eventos para correlacionar por IP
 traffic_tracker = defaultdict(list) # Almacena eventos por dispositivo (IP de origen o dispositivo)
+malware_tracker = defaultdict(list) # Almacena eventos de malware por dispositivo
+user_attempt_tracker = defaultdict(list)
+data_transfer_tracker = defaultdict(lambda: {"size": 0, "timestamp": None})
+internal_connection_tracker = defaultdict(list)
+app_event_tracker = defaultdict(list)
 
 active_alerts = {}  # Almacena alertas activas para evitar duplicación
 
@@ -422,6 +436,242 @@ def check_unauthorized_access(logs):
             context = {
                 "log_ids": [log["_id"] for log in logs],
                 "source_ip": ip,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+def clean_old_malware_entries(device, interval):
+    """
+    Limpia entradas antiguas de eventos de malware para un dispositivo.
+    """
+    current_time = datetime.now()
+    malware_tracker[device] = [
+        t for t in malware_tracker[device] 
+        if current_time - t <= interval
+    ]
+
+def check_malware_activity(logs):
+    """
+    Detecta posibles actividades de malware basadas en eventos registrados en los logs.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        device_id = log["_source"].get("device_id")
+        msg = log["_source"].get("msg", "")
+        
+        # Aquí podrías incluir más condiciones para detectar comportamientos típicos de malware
+        if "file access" in msg.lower() or "suspicious connection" in msg.lower():
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            malware_tracker[device_id].append(log_time)
+
+    for device, timestamps in malware_tracker.items():
+        clean_old_malware_entries(device, MALWARE_TIME_WINDOW)
+
+        if len(timestamps) >= MALWARE_ACTIVITY_THRESHOLD:
+            alert_id = f"malware_activity_{device}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Posible actividad de malware detectada en el dispositivo {device}. {len(timestamps)} eventos sospechosos en los últimos {MALWARE_TIME_WINDOW} minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs], 
+                "device_id": device, 
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def clean_old_attempts(user, interval):
+    """
+    Limpia los intentos de inicio de sesión fallidos antiguos para un usuario.
+    """
+    current_time = datetime.now()
+    user_attempt_tracker[user] = [
+        attempt for attempt in user_attempt_tracker[user] 
+        if current_time - attempt <= interval
+    ]
+
+def check_user_behavior_anomaly(logs):
+    """
+    Detecta comportamiento anómalo de usuarios basado en múltiples intentos de inicio de sesión fallidos.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        username = log["_source"].get("username")
+        msg = log["_source"].get("msg", "")
+
+        # Verificar si el log indica un intento de inicio de sesión fallido
+        if "authentication failed" in msg.lower():
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            user_attempt_tracker[username].append(log_time)
+
+    for user, attempts in user_attempt_tracker.items():
+        clean_old_attempts(user, TIME_WINDOW)
+
+        # Si el número de intentos fallidos supera el umbral
+        if len(attempts) >= FAILED_ATTEMPT_THRESHOLD:
+            alert_id = f"user_behavior_anomaly_{user}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Comportamiento anómalo detectado para el usuario {user}: {len(attempts)} intentos de inicio de sesión fallidos en los últimos {TIME_WINDOW.seconds // 60} minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs],
+                "username": user,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def check_data_exfiltration(logs):
+    """
+    Detecta transferencias masivas de datos hacia ubicaciones externas.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        device_id = log["_source"].get("device_id")
+        data_size = log["_source"].get("data_size", 0)  # Asegúrate de que los logs tengan el campo `data_size`
+        
+        if data_size > 0:  # Solo procesamos los logs que tienen tamaño de datos
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            
+            # Inicializar o actualizar el tracker de transferencia para el dispositivo
+            if device_id not in data_transfer_tracker or data_transfer_tracker[device_id]["timestamp"] is None:
+                data_transfer_tracker[device_id]["timestamp"] = log_time
+                data_transfer_tracker[device_id]["size"] = data_size
+            else:
+                # Si el log es dentro del intervalo de 10 minutos, sumar el tamaño de los datos
+                if log_time - data_transfer_tracker[device_id]["timestamp"] <= TIME_WINDOW:
+                    data_transfer_tracker[device_id]["size"] += data_size
+                else:
+                    # Si la transferencia está fuera del intervalo, reiniciar el contador
+                    data_transfer_tracker[device_id]["timestamp"] = log_time
+                    data_transfer_tracker[device_id]["size"] = data_size
+
+            # Verificar si la transferencia excede el umbral
+            if data_transfer_tracker[device_id]["size"] > TRANSFER_THRESHOLD:
+                alert_id = f"data_exfiltration_{device_id}_{log_time.strftime('%Y%m%d%H%M%S')}"
+                message = f"Posible exfiltración de datos detectada desde el dispositivo {device_id}. {data_transfer_tracker[device_id]['size'] / (1024 * 1024 * 1024)} GB transferidos en los últimos {TIME_WINDOW.seconds // 60} minutos."
+                
+                # Crear el contexto de la alerta
+                context = {
+                    "log_ids": [log["_id"] for log in logs],
+                    "device_id": device_id,
+                    "data_size": data_transfer_tracker[device_id]["size"],
+                    "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+
+                # Activar la alerta
+                activate_alert(alert_id, message, context)
+
+                # Reiniciar el tracker después de generar la alerta para evitar duplicación
+                data_transfer_tracker[device_id]["size"] = 0
+                data_transfer_tracker[device_id]["timestamp"] = None
+
+
+def check_security_configuration_changes(logs):
+    """
+    Detecta cambios en las configuraciones de seguridad (firewalls, servidores de seguridad, autenticación).
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        device_id = log["_source"].get("device_id")
+        msg = log["_source"].get("msg", "")
+        
+        # Buscamos cambios en configuraciones de seguridad
+        if any(keyword in msg.lower() for keyword in ["changed", "updated", "modified", "configured"]):
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            alert_id = f"security_config_change_{device_id}_{log_time.strftime('%Y%m%d%H%M%S')}"
+            message = f"Cambio detectado en configuración de seguridad en el dispositivo {device_id}: {msg}"
+            context = {
+                "log_ids": [log["_id"] for log in logs],
+                "device_id": device_id,
+                "event_time": log_time.strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def clean_old_entries(ip, interval):
+    """
+    Limpia entradas antiguas de intentos de conexión para una IP.
+    """
+    current_time = datetime.now()
+    internal_connection_tracker[ip] = [
+        t for t in internal_connection_tracker[ip]
+        if current_time - t <= interval
+    ]
+
+def check_suspicious_internal_connections(logs):
+    """
+    Detecta conexiones internas sospechosas basadas en intentos de conexión repetidos en poco tiempo.
+    Args:
+        logs: Logs extraídos de Elasticsearch
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        src_ip = log["_source"].get("src_ip")
+        dest_ip = log["_source"].get("dest_ip")
+        msg = log["_source"].get("msg", "")
+        
+        # Filtra solo las conexiones internas (tienen que ser entre dispositivos internos)
+        if src_ip != dest_ip:  # Asegurarse de que no sea una conexión con uno mismo
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            # Se registran los intentos de conexión de las IPs internas
+            internal_connection_tracker[(src_ip, dest_ip)].append(log_time)
+
+    for (src_ip, dest_ip), timestamps in internal_connection_tracker.items():
+        clean_old_entries((src_ip, dest_ip), TIME_WINDOW)
+
+        if len(timestamps) >= INTERNAL_CONNECTIONS_THRESHOLD:
+            alert_id = f"suspicious_internal_connection_{src_ip}_{dest_ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Posible conexión interna sospechosa detectada entre las IPs {src_ip} y {dest_ip}. {len(timestamps)} intentos en los últimos {TIME_WINDOW} minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs],
+                "source_ip": src_ip,
+                "dest_ip": dest_ip,
+                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }
+            activate_alert(alert_id, message, context)
+
+
+def clean_old_application_entries(device_id, interval):
+    """
+    Limpia entradas antiguas para una aplicación en un intervalo de tiempo.
+    """
+    current_time = datetime.now()
+    app_event_tracker[device_id] = [
+        t for t in app_event_tracker[device_id] 
+        if current_time - t <= interval
+    ]
+
+def check_application_specific_events(logs):
+    """
+    Detecta eventos críticos en aplicaciones específicas como accesos fallidos o actividad sospechosa.
+    Args:
+        logs: Logs extraídos de Elasticsearch.
+    """
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        device_id = log["_source"].get("device_id")
+        msg = log["_source"].get("msg", "")
+        
+        # Verificamos si el evento está relacionado con un acceso fallido en una base de datos o sistema ERP
+        if "access denied" in msg.lower() or "failed login" in msg.lower():  
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            app_event_tracker[device_id].append(log_time)
+
+    # Procesamos los eventos y verificamos si se alcanzó el umbral
+    for device_id, timestamps in app_event_tracker.items():
+        clean_old_application_entries(device_id, TIME_WINDOW)
+
+        if len(timestamps) >= APPLICATION_EVENT_THRESHOLD:
+            alert_id = f"app_event_{device_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Posible acceso no autorizado o actividad sospechosa detectada en {device_id}. {len(timestamps)} eventos de acceso fallido en los últimos {TIME_WINDOW} minutos."
+            context = {
+                "log_ids": [log["_id"] for log in logs], 
+                "device_id": device_id, 
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
             activate_alert(alert_id, message, context)

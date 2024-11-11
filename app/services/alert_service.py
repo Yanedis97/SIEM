@@ -8,7 +8,8 @@ def get_all_alerts(db: Session, page: int = 1, size: int = 10):
         start_from = (page - 1) * size
         alerts = db.query(Alerts).order_by(Alerts.created_at.desc()).offset(start_from).limit(size).all()
         
-        return alerts
+        total_alerts = db.query(Alerts).count()
+        return alerts, total_alerts
     except Exception as e:
         raise e
 
@@ -18,7 +19,8 @@ def get_active_alerts(db: Session, page: int = 1, size: int = 10):
         start_from = (page - 1) * size
         active_alerts = db.query(Alerts).filter(Alerts.status == 1).order_by(Alerts.created_at.desc()).offset(start_from).limit(size).all()
         
-        return active_alerts
+        total_alerts = db.query(Alerts).count()
+        return active_alerts, total_alerts
     except Exception as e:
         raise e
 

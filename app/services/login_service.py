@@ -33,3 +33,14 @@ def authenticate_user(db: Session, email: str, password: str):
         return user
     else:
         return False
+    
+# Obtener todos los usuarios
+def get_all_users(db: Session, page: int = 1, size: int = 10):
+    try:
+        start_from = (page - 1) * size
+        users = db.query(Users).order_by(Users.id.desc()).offset(start_from).limit(size).all()
+        total_users = db.query(Users).count()
+
+        return users, total_users
+    except Exception as e:
+        raise e

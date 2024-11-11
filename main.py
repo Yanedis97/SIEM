@@ -91,6 +91,36 @@ RULES_CONFIG = {
         "devices": ["auth_server"],
         "log_size": 5,
         "time_window": "now-3m"
+    },
+    "malware_activity_detection": {
+        "function": rules.check_malware_activity,
+        "devices": ["user_device", "file_server", "endpoint"],
+        "log_size": 10,
+        "time_window": "now-10m"
+    },
+    "user_behavior_anomaly": {
+        "function": rules.check_user_behavior_anomaly,
+        "devices": ["auth_server", "idm_server"],
+        "log_size": 10,
+        "time_window": "now-15m"
+    },
+    "data_exfiltration": {
+    "function": rules.check_data_exfiltration,
+    "devices": ["firewall", "file_server", "network_device"],
+    "log_size": 1000, 
+    "time_window": "now-10m"
+    },
+    "security_config_changes": {
+        "function": rules.check_security_configuration_changes,
+        "devices": ["firewall", "auth_server", "security_server"],  # Dispositivos relevantes
+        "log_size": 10,  # Tamaño de log adecuado para cambios importantes
+        "time_window": None  # En tiempo real
+    },
+    "suspicious_internal_connections": {
+        "function": rules.check_suspicious_internal_connections,
+        "devices": ["server", "network_device", "endpoint"],  # Dispositivos relevantes para conexiones internas
+        "log_size": 100,  # Ajusta el tamaño según lo necesario
+        "time_window": "now-5m"  # Ventana de 5 minutos
     }
 }
 
@@ -175,7 +205,7 @@ async def start_process_rules():
         try:
             latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
             if latest_logs:
-                last_timestamp = latest_logs[-1]['_source']['@timestamp']
+                last_timestamp = latest_logs[-1]['_source']['timestamp']
         except Exception as e:
             print(f"Error al obtener logs: {e}")
         

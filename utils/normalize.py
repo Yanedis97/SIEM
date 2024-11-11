@@ -101,6 +101,26 @@ def start_monitoring(log_directory, es):
         'router'
     )
 
+    normalizer.add_pattern(
+        r'(?P<timestamp>\w+ \d+ \d+:\d+:\d+)\s+(?P<hostname>\S+)\s+(?P<service>\S+): (?P<msg>.+)', 
+        'linux_log'
+    )
+
+    normalizer.add_pattern(
+        r'(?P<level>\w+)\s+(?P<timestamp>\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{2}:\d{2} [ap]\. [m]+\.\w+)\s+(?P<source>[\w\s-]+)\s+(?P<event_id>\d+)\s+(?P<category>\w+)\s+"(?P<message>.+)"',
+        'windows_event'
+    )
+
+    normalizer.add_pattern(
+        r'(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) \[(?P<level>\w+)\] (?P<msg>.+)', 
+        'hp_support_assistant'
+    )
+
+    normalizer.add_pattern(
+        r'(?P<index>\d+)\s+(?P<month>\w+)\s+(?P<day>\d+)\s+(?P<time>\d{2}:\d{2}:\d{2})\s+(?P<entry_type>\w+)\s+(?P<source>[\w\s\(\)\-]+)\s+(?P<instance_id>\d+)\s+(?P<message>.+)',
+        'powershell_log'
+    )
+
     event_handler = LogHandler(normalizer)
     observer = Observer()
     observer.schedule(event_handler, path=log_directory, recursive=False)
