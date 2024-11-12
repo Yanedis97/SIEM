@@ -10,10 +10,6 @@ import math
 router = APIRouter()
 
 
-class GetUsersRequest(BaseModel):
-    page: int = Query(1, ge=1)
-    size: int = Query(10, ge=10)
-
 class GetUsersResponse(BaseModel):
     id: int
     username: str
@@ -106,9 +102,12 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 
 # Endpoint para obtener todos los usuarios
 @router.get("/all")
-def get_all_users(request: GetUsersRequest, db: Session = Depends(get_db)):
+def get_all_users(
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=10), 
+    db: Session = Depends(get_db)):
     try:
-        users, total_users = get_all_users(db=db, page=request.page, size=request.size)
+        users, total_users = get_all_users(db=db, page=page, size=size)
         if len(users) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -122,14 +121,14 @@ def get_all_users(request: GetUsersRequest, db: Session = Depends(get_db)):
             ) for user in users
         ]
 
-        total_pages = math.ceil(total_users / request.size)
+        total_pages = math.ceil(total_users / size)
         
         return {
             "detail": "Usuarios obtenidos exitosamente",
             "data": users_data,
             "pagination": {
-                "page": request.page,
-                "size": request.size,
+                "page": page,
+                "size": size,
                 "total_users": total_users,
                 "total_pages": total_pages
             }

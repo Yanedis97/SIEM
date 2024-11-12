@@ -11,10 +11,6 @@ from io import BytesIO
 router = APIRouter()
 
 # Modelo para obtener alertas con paginación
-class GetAlertsRequest(BaseModel):
-    page: int = Query(1, ge=1)
-    size: int = Query(10, ge=10)
-
 class GetAlertsResponse(BaseModel):
     id: int
     second_id: str
@@ -34,9 +30,13 @@ class UpdateAlertRequest(BaseModel):
 
 # Endpoint para obtener todas las alertas
 @router.get("/all")
-def get_all_alerts(request: GetAlertsRequest, db: Session = Depends(get_db)):
+def get_all_alerts(
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=10),
+    db: Session = Depends(get_db)
+):
     try:
-        alerts, total_alerts = alert_service.get_all_alerts(db=db, page=request.page, size=request.size)
+        alerts, total_alerts = alert_service.get_all_alerts(db=db, page=page, size=size)
         if len(alerts) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -55,14 +55,14 @@ def get_all_alerts(request: GetAlertsRequest, db: Session = Depends(get_db)):
             ) for alert in alerts
         ]
 
-        total_pages = math.ceil(total_alerts / request.size)
+        total_pages = math.ceil(total_alerts / size)
         
         return {
             "detail": "Alertas obtenidas exitosamente",
             "data": alerts_data,
             "pagination": {
-                "page": request.page,
-                "size": request.size,
+                "page": page,
+                "size": size,
                 "total_users": total_alerts,
                 "total_pages": total_pages
             }
@@ -73,9 +73,12 @@ def get_all_alerts(request: GetAlertsRequest, db: Session = Depends(get_db)):
 
 # Endpoint para obtener alertas activas
 @router.get("/active")
-def get_active_alerts(request: GetAlertsRequest, db: Session = Depends(get_db)):
+def get_active_alerts(
+    page: int = Query(1, ge=1),
+    size: int = Query(10, ge=10),
+    db: Session = Depends(get_db)):
     try:
-        active_alerts, total_alerts = alert_service.get_active_alerts(db=db, page=request.page, size=request.size)
+        active_alerts, total_alerts = alert_service.get_active_alerts(db=db, page=page, size=size)
         if len(active_alerts) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -94,14 +97,14 @@ def get_active_alerts(request: GetAlertsRequest, db: Session = Depends(get_db)):
             ) for alert in active_alerts
         ]
 
-        total_pages = math.ceil(total_alerts / request.size)
+        total_pages = math.ceil(total_alerts / size)
         
         return {
             "detail": "Alertas obtenidas exitosamente",
             "data": alerts_data,
             "pagination": {
-                "page": request.page,
-                "size": request.size,
+                "page": page,
+                "size": size,
                 "total_users": total_alerts,
                 "total_pages": total_pages
             }
