@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, status
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from app.services.login_service import create_user, authenticate_user, get_all_users
+from app.services.login_service import create_user, authenticate_user, get_all_users_service
 from database.db_connection import get_db
 from sqlalchemy.exc import IntegrityError
 import math
@@ -107,7 +107,7 @@ def get_all_users(
     size: int = Query(10, ge=10), 
     db: Session = Depends(get_db)):
     try:
-        users, total_users = get_all_users(db=db, page=page, size=size)
+        users, total_users = get_all_users_service(db=db, page=page, size=size)
         if len(users) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         

@@ -35,7 +35,7 @@ def authenticate_user(db: Session, email: str, password: str):
         return False
     
 # Obtener todos los usuarios
-def get_all_users(db: Session, page: int = 1, size: int = 10):
+def get_all_users_service(db: Session, page: int = 1, size: int = 10):
     try:
         start_from = (page - 1) * size
         users = db.query(Users).order_by(Users.id.desc()).offset(start_from).limit(size).all()

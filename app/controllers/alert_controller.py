@@ -25,7 +25,6 @@ class GetAlertsResponse(BaseModel):
 
 # Modelo para actualizar el estado de una alerta
 class UpdateAlertRequest(BaseModel):
-    id: int
     status: int
 
 # Endpoint para obtener todas las alertas

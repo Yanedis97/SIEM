@@ -9,7 +9,7 @@ import asyncio
 import uvicorn
 
 
-es = elasticsearch.connect_elasticsearch()
+es = elasticsearch.connect_asyncelasticsearch()
 
 # Crear instancia de FastAPI
 app = FastAPI()
