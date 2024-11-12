@@ -198,12 +198,12 @@ async def start_process_rules():
     #try:
     while True:
         try:
-            process_rules(es)
+            await process_rules(es)
         except Exception as e:
             print(f"Error al procesar reglas: {e}")
 
         try:
-            latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
+            latest_logs = await fetch_logs(es, INDEX, last_timestamp, size=1)
             if latest_logs:
                 last_timestamp = latest_logs[-1]['_source']['timestamp']
         except Exception as e:
@@ -218,9 +218,13 @@ async def start_fastapi_server():
     """
     Inicia el servidor FastAPI con Uvicorn.
     """
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-    server = uvicorn.Server(config)
-    await server.serve()
+    try:
+        config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+        server = uvicorn.Server(config)
+        await server.serve()
+    except KeyboardInterrupt:
+        print("Interrupción manual detectada. Deteniendo el servidor...")
+        return
 
 
 def open_user_interface():

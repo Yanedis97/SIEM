@@ -18,7 +18,7 @@ class GetAlertsResponse(BaseModel):
     message: str
     source_ip: str
     dest_ip: str
-    severity: int
+    severity: str
     context: str
     status: int
     created_at: str
