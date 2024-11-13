@@ -6,7 +6,7 @@ def create_user(db: Session, username: str, email: str, password: str, role: str
     # Hashear la contraseña
     hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
     
-    user = db.query(Users).filter(Users.id == user, Users.role == "admin").first()
+    user = db.query(Users).filter(Users.id == user_id, Users.role == "admin").first()
 
     if user:
         # Crear un nuevo usuario

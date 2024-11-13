@@ -32,10 +32,8 @@ class CreateUserRequest(BaseModel):
 
 # Pydantic model para la respuesta de creación de usuario
 class CreateUserResponse(BaseModel):
-    id: int
-    username: str
-    email: str
-    role: str
+    detail: str
+    data: dict
 
 # Pydantic model para la solicitud de login
 class LoginRequest(BaseModel):
