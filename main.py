@@ -1,6 +1,6 @@
-import time
 import webbrowser
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.controllers import log_controller, alert_controller, login_controller
 from utils import normalize
 from utils import elasticsearch 
@@ -13,6 +13,33 @@ es = elasticsearch.connect_asyncelasticsearch()
 
 # Crear instancia de FastAPI
 app = FastAPI()
+
+# Configuración de políticas CORS para permitir cualquier origen
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:5000", "localhost:3000",
+                   "localhost:5173","http://127.0.0.1:5173",
+                   "http://localhost:5173", "http://localhost:5173/",
+                   "http://localhost:3000", "http://localhost:3000/"],
+    allow_credentials=True,
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Access-Control-Allow-Headers",
+        "Origin",
+        "Accept",
+        "X-Requested-With",
+        "Content-Type",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        "Access-Control-Allow-Origin",
+    ],
+)
 
 # Registrar los controladores
 app.include_router(log_controller.router, prefix="/logs", tags=["Logs"])

@@ -27,7 +27,7 @@ class CreateUserRequest(BaseModel):
     username: str
     email: str
     password: str
-    role: str = "Viewer"  # Rol por defecto es 'Viewer'
+    role: str = "viewer" 
     user_id: int
 
 # Pydantic model para la respuesta de creación de usuario
@@ -44,9 +44,8 @@ class LoginRequest(BaseModel):
 
 # Pydantic model para la respuesta de login (token JWT u otra forma de respuesta)
 class LoginResponse(BaseModel):
-    id: int
-    username: str
-    role: str
+    detail: str
+    data: dict
 
 # API para crear un nuevo usuario
 @router.post("/create_user", response_model=CreateUserResponse, status_code=status.HTTP_201_CREATED)
