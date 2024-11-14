@@ -8,7 +8,7 @@ from rules import rules
 import uvicorn
 import time
 
-es = elasticsearch.connect_asyncelasticsearch()
+es = elasticsearch.connect_elasticsearch()
 
 # Crear instancia de FastAPI
 app = FastAPI()
