@@ -1,7 +1,8 @@
 import uuid
 import re
 import json
-import time
+import asyncio
+import aiofiles
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -14,7 +15,7 @@ class LogHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.src_path.endswith(".log"):
             print(f"Archivo modificado: {event.src_path}")
-            self.normalizer.normalize_file(event.src_path)
+            asyncio.create_task(self.normalizer.normalize_file(event.src_path))
 
 
 class LogNormalizer:
@@ -22,11 +23,13 @@ class LogNormalizer:
         self.elasticsearch = es
         self.patterns = []
         self.processed_lines = {}  # Diccionario para guardar el progreso de cada archivo
+        self.lock = asyncio.Lock()  # Para proteger el acceso a processed_lines
+        self.queue = asyncio.Queue()  # Cola para almacenar logs procesados
 
     def add_pattern(self, pattern, log_type):
         self.patterns.append((pattern, log_type))
 
-    def normalize_line(self, line):
+    async def normalize_line(self, line):
         for pattern, log_type in self.patterns:
             match = re.match(pattern, line)
             if match:
@@ -56,27 +59,27 @@ class LogNormalizer:
         # Logs no reconocidos
         return {"raw_log": line, "type": "unrecognized", "msg": line.strip()}
 
-
-    def save_logs_to_elasticsearch(self, logs):
+    async def save_logs_to_elasticsearch(self, logs):
         for log in logs:
             if 'timestamp' not in log or log['timestamp'] == "Desconocido":
                 print("Timestamp faltante en log, omitiendo:", log)
                 continue
 
             log_json = json.dumps(log)
-            self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
+            await self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
             print(">>>>Guardado: ", log_json)
 
-    def normalize_file(self, input_file):
-        # Leer el archivo desde la última posición procesada
-        last_position = self.processed_lines.get(input_file, 0)
+    async def normalize_file(self, input_file):
+        # Leer el archivo desde la última posición procesada de manera segura
+        async with self.lock:
+            last_position = self.processed_lines.get(input_file, 0)
 
-        with open(input_file, "r") as f:
-            f.seek(last_position)  # Ir a la última posición procesada
+        async with aiofiles.open(input_file, "r") as f:
+            await f.seek(last_position)  # Ir a la última posición procesada
 
             normalized_logs = []
-            for line in f:
-                normalized_log = self.normalize_line(line)
+            async for line in f:
+                normalized_log = await self.normalize_line(line)
                 print(f"normalize_log: {normalized_log}")
 
                 if normalized_log is not None:
@@ -84,12 +87,18 @@ class LogNormalizer:
                     normalized_log["id"] = log_id
                     normalized_logs.append(normalized_log)
 
-            self.save_logs_to_elasticsearch(normalized_logs)
-            # Guardar la posición actual del archivo
-            self.processed_lines[input_file] = f.tell()
+            await self.save_logs_to_elasticsearch(normalized_logs)
+
+            # Enviar los logs procesados a la cola para un procesamiento posterior
+            for log in normalized_logs:
+                await self.queue.put(log)
+
+            # Guardar la posición actual del archivo de manera segura
+            async with self.lock:
+                self.processed_lines[input_file] = await f.tell()
 
 
-def start_monitoring(log_directory, es):
+async def start_monitoring(log_directory, es):
     normalizer = LogNormalizer(es)
     normalizer.add_pattern(
         r'<(?P<pri>\d+)>(?P<timestamp>\S+ +\d+ \d+:\d+:\d+).*snort\[\d+\]: \[(?P<gid>\d+):(?P<sid>\d+):(?P<rev>\d+)\] (?P<msg>.+?) \{(?P<protocol>\w+)\} (?P<src_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)? -> (?P<dst_ip>\d+\.\d+\.\d+\.\d+)(?::\d+)?',
@@ -129,7 +138,7 @@ def start_monitoring(log_directory, es):
 
     try:
         while True:
-            time.sleep(1)  # Reducir la carga de CPU y mantener el hilo activo
+            await asyncio.sleep(1)
     except KeyboardInterrupt:
         observer.stop()
     observer.join()

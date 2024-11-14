@@ -189,29 +189,21 @@ async def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     return logs
 
 
-async def process_rule(rule_name, config, es):
-    """
-    Procesa una regla específica según la configuración definida.
-    """
-    print(f"Procesando regla: {rule_name}")
-
-    logs = await fetch_logs(
-        es=es,
-        index=INDEX,
-        time_window=config["time_window"],
-        filtered_devices=config["devices"],
-        size=config["log_size"]
-    )
-        
-    # Llamar a la función de la regla con los logs obtenidos
-    config["function"](logs)
-
 async def process_rules(es):
-    """
-    Procesa todas las reglas en hilos separados si es necesario.
-    """
     for rule_name, config in RULES_CONFIG.items():
-        await process_rule(rule_name, config, es)
+        print(f"Procesando regla {rule_name}")
+        
+        try:
+            logs = await fetch_logs(
+                es=es,
+                index=INDEX,
+                time_window=config["time_window"],
+                filtered_devices=config["devices"],
+                size=config["log_size"]
+            )
+            config["function"](logs)
+        except Exception as e:
+            print(f"Error al procesar logs para la regla {rule_name}: {e}")
 
 async def normalize_and_save_logs(es):
     """
@@ -241,10 +233,9 @@ async def start_process_rules():
     #except KeyboardInterrupt:
     #    print("Deteniendo la ejecución...")
 
+
 async def start_fastapi_server():
-    """
-    Inicia el servidor FastAPI con Uvicorn.
-    """
+    """Inicia el servidor FastAPI bajo demanda."""
     try:
         config = uvicorn.Config(app, host="0.0.0.0", port=8000)
         server = uvicorn.Server(config)
@@ -253,24 +244,20 @@ async def start_fastapi_server():
         print("Interrupción manual detectada. Deteniendo el servidor...")
         return
 
-
 def open_user_interface():
+    """Función para abrir la interfaz cuando el usuario da clic en el ícono."""
+    # Inicia el servidor FastAPI en un hilo separado
+    asyncio.create_task(start_fastapi_server())
+    # Abre la interfaz de usuario en el navegador
     webbrowser.open("http://localhost:8000")
 
-def main():
-    # Inicia los procesos en segundo plano con asyncio
-    loop = asyncio.get_event_loop()
 
-    # Normalización de logs en segundo plano
-    loop.create_task(normalize_and_save_logs(es))
-
-    # Monitoreo de reglas en segundo plano
-    loop.create_task(start_process_rules())
-
-    open_user_interface()
-
-    # Inicia el servidor web
-    loop.run_until_complete(start_fastapi_server())
+async def main():
+    await asyncio.gather(
+        normalize_and_save_logs(es),
+        process_rules(es),
+        start_fastapi_server()
+    )
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
