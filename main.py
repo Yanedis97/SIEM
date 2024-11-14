@@ -5,9 +5,8 @@ from app.controllers import log_controller, alert_controller, login_controller
 from utils import normalize
 from utils import elasticsearch 
 from rules import rules
-import asyncio
 import uvicorn
-
+import time
 
 es = elasticsearch.connect_asyncelasticsearch()
 
@@ -52,7 +51,7 @@ if not es.indices.exists(index=INDEX):
     es.indices.create(index=INDEX)
 
 # Intervalo para leer los logs (en segundos)
-READ_INTERVAL = 5
+READ_INTERVAL = 30
 
 # Último timestamp procesado (puede iniciarse como 'now-1d' o leerlo de la base de datos)
 last_timestamp = "now-1d"
@@ -152,7 +151,7 @@ RULES_CONFIG = {
 }
 
 
-async def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
+def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     """
     Obtiene los logs de Elasticsearch a partir de un tiempo dado y opcionalmente filtra por dispositivos.
     """
@@ -184,17 +183,17 @@ async def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
             }
         })
 
-    response = await es.search(index=index, body=query)
+    response = es.search(index=index, body=query)
     logs = response['hits']['hits']
     return logs
 
 
-async def process_rules(es):
+def process_rules(es):
     for rule_name, config in RULES_CONFIG.items():
         print(f"Procesando regla {rule_name}")
         
         try:
-            logs = await fetch_logs(
+            logs = fetch_logs(
                 es=es,
                 index=INDEX,
                 time_window=config["time_window"],
@@ -205,41 +204,41 @@ async def process_rules(es):
         except Exception as e:
             print(f"Error al procesar logs para la regla {rule_name}: {e}")
 
-async def normalize_and_save_logs(es):
+def normalize_and_save_logs(es):
     """
     Inicia la normalización y el guardado de logs en Elasticsearch.
     """
     normalize.start_monitoring('C:\\logs', es)
 
-async def start_process_rules():
+def start_process_rules():
     global last_timestamp
     print("Inicia monitoreo")
     #try:
     while True:
         try:
-            await process_rules(es)
+            process_rules(es)
         except Exception as e:
             print(f"Error al procesar reglas: {e}")
 
         try:
-            latest_logs = await fetch_logs(es, INDEX, last_timestamp, size=1)
+            latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
             if latest_logs:
                 last_timestamp = latest_logs[-1]['_source']['timestamp']
         except Exception as e:
             print(f"Error al obtener logs: {e}")
         
-        await asyncio.sleep(READ_INTERVAL)
+        time.sleep(READ_INTERVAL)
 
     #except KeyboardInterrupt:
     #    print("Deteniendo la ejecución...")
 
 
-async def start_fastapi_server():
+def start_fastapi_server():
     """Inicia el servidor FastAPI bajo demanda."""
     try:
         config = uvicorn.Config(app, host="0.0.0.0", port=8000)
         server = uvicorn.Server(config)
-        await server.serve()
+        server.serve()
     except KeyboardInterrupt:
         print("Interrupción manual detectada. Deteniendo el servidor...")
         return
@@ -247,17 +246,21 @@ async def start_fastapi_server():
 def open_user_interface():
     """Función para abrir la interfaz cuando el usuario da clic en el ícono."""
     # Inicia el servidor FastAPI en un hilo separado
-    asyncio.create_task(start_fastapi_server())
+    start_fastapi_server()
     # Abre la interfaz de usuario en el navegador
-    webbrowser.open("http://localhost:8000")
+    #webbrowser.open("http://localhost:8000")
 
 
-async def main():
-    await asyncio.gather(
-        normalize_and_save_logs(es),
-        process_rules(es),
-        start_fastapi_server()
-    )
+def main():
+    from threading import Thread
+    log_thread = Thread(target=normalize_and_save_logs, args=(es,))
+    log_thread.start()
+    print("------------primer Hilo")
+    rules_thread = Thread(target=start_process_rules)
+    rules_thread.start()
+    print("------------segundo Hilo")
+
+    start_fastapi_server()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
