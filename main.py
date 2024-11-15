@@ -1,3 +1,4 @@
+from threading import Thread
 import webbrowser
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -236,9 +237,7 @@ def start_process_rules():
 def start_fastapi_server():
     """Inicia el servidor FastAPI bajo demanda."""
     try:
-        config = uvicorn.Config(app, host="0.0.0.0", port=8000)
-        server = uvicorn.Server(config)
-        server.serve()
+        uvicorn.run(app, host="0.0.0.0", port=8000)
     except KeyboardInterrupt:
         print("Interrupción manual detectada. Deteniendo el servidor...")
         return
@@ -250,17 +249,23 @@ def open_user_interface():
     # Abre la interfaz de usuario en el navegador
     #webbrowser.open("http://localhost:8000")
 
-
-def main():
-    from threading import Thread
+def start_monitoring_task():
     log_thread = Thread(target=normalize_and_save_logs, args=(es,))
     log_thread.start()
-    print("------------primer Hilo")
+
     rules_thread = Thread(target=start_process_rules)
     rules_thread.start()
-    print("------------segundo Hilo")
 
-    start_fastapi_server()
+    #log_thread.join()
+    #rules_thread.join()
 
+
+def main():
+    fastapi_thread = Thread(target=start_fastapi_server)
+    fastapi_thread.start()
+
+    start_monitoring_task()
+
+    fastapi_thread.join()
 if __name__ == "__main__":
     main()
