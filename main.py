@@ -85,7 +85,7 @@ RULES_CONFIG = {
     },
     "snort_alert": {
         "function": rules.check_snort_alert,
-        "devices": ["ids"],
+        "devices": ["snort"],
         "log_size": 1,
         "time_window": None  # En tiempo real
     },
@@ -180,7 +180,7 @@ def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     if filtered_devices:
         query["query"]["bool"]["must"].append({
             "terms": {
-                "device_id.keyword": filtered_devices
+                "type.keyword": filtered_devices
             }
         })
 

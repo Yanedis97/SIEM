@@ -16,5 +16,6 @@ class Alerts(Base):
     dest_ip = Column(String(50), nullable=True)
     severity = Column(Integer, nullable=True)
     context = Column(String(), nullable=True)
+    alert_category = Column(Integer, nullable=True)
     status = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)

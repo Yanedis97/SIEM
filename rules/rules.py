@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from database.db_connection import SessionLocal
 from app.models.alerts import Alerts
+from app.models.alerts_categories import AlertsCategory
 
 # Parámetros de reglas de correlación
 TIME_RELATION_THRESHOLD = 5  # en minutos
@@ -52,7 +53,7 @@ def is_alert_active(alert_id):
     """
     return alert_id in active_alerts
 
-def activate_alert(alert_id: str, message: str, context: dict = {}):
+def activate_alert(alert_id: str, message: str, context: dict = {}, category:str = ""):
     """
     Activa una alerta y la guarda en el almacén temporal.
     """
@@ -62,6 +63,10 @@ def activate_alert(alert_id: str, message: str, context: dict = {}):
 
     session = SessionLocal()
     try:
+
+        alert_category = session.query(AlertsCategory).filter(AlertsCategory.code == category).first()
+        if alert_category is None:
+            raise ValueError("No se encontro información de la categoria de la alerta")
         
         alert_data = Alerts(
             second_id = alert_id,
@@ -72,6 +77,7 @@ def activate_alert(alert_id: str, message: str, context: dict = {}):
             dest_ip = context.get("source_ip",None),
             severity = 1,  
             context = context,
+            alert_category = alert_category.id,
             status = 1,
             created_at = datetime.now()
         )
@@ -113,7 +119,7 @@ def check_brute_force(logs):
                     "source_ip": ip, 
                     "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
-                activate_alert(alert_id, message, context)
+                activate_alert(alert_id, message, context, "check_brute_force")
 
 
 def check_privilege_change(logs):
@@ -136,7 +142,7 @@ def check_privilege_change(logs):
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "msg": msg
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_privilege_change")
 
 
 def check_suspicious_traffic(logs):
@@ -169,7 +175,7 @@ def check_suspicious_traffic(logs):
                 "source_ip": device_ip, 
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context,"check_suspicious_traffic")
         
         # Si es una red pequeña, se usa un umbral reducido (500 eventos)
         elif len(timestamps) >= SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL:
@@ -180,7 +186,7 @@ def check_suspicious_traffic(logs):
                 "source_ip": device_ip, 
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_suspicious_traffic")
 
 
 def check_system_errors(logs):
@@ -204,7 +210,7 @@ def check_system_errors(logs):
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "msg": msg
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_system_errors")
 
 
 def check_snort_alert(logs):
@@ -268,7 +274,7 @@ def process_snort_log(log_entry):
                         "alert_type": alert_type,
                         "timestamp": timestamp.isoformat()
                     }
-                    activate_alert(alert_id, message, context)
+                    activate_alert(alert_id, message, context, "process_snort_log")
             except ValueError:
                 print(f"Formato de fecha inválido en log: {timestamp_str}")
 
@@ -299,7 +305,7 @@ def check_time_related_events(logs):
                 "source_ip": ip, 
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_time_related_events")
 
 
 def check_apt(logs):
@@ -334,7 +340,7 @@ def check_apt(logs):
                 "device": device,
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_apt")
 
 
 def check_recon_activity(logs):
@@ -372,7 +378,7 @@ def check_recon_activity(logs):
                 "dest_ip": dest_ip,
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_recon_activity")
 
 
 def check_exploitation_attempts(logs):
@@ -406,7 +412,7 @@ def check_exploitation_attempts(logs):
                 "source_ip": ip,
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_exploitation_attempts")
 
 
 def check_unauthorized_access(logs):
@@ -438,7 +444,7 @@ def check_unauthorized_access(logs):
                 "source_ip": ip,
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_unauthorized_access")
 
 def clean_old_malware_entries(device, interval):
     """
@@ -477,7 +483,7 @@ def check_malware_activity(logs):
                 "device_id": device, 
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_malware_activity")
 
 
 def clean_old_attempts(user, interval):
@@ -518,7 +524,7 @@ def check_user_behavior_anomaly(logs):
                 "username": user,
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_user_behavior_anomaly")
 
 
 def check_data_exfiltration(logs):
@@ -562,7 +568,7 @@ def check_data_exfiltration(logs):
                 }
 
                 # Activar la alerta
-                activate_alert(alert_id, message, context)
+                activate_alert(alert_id, message, context, "check_data_exfiltration")
 
                 # Reiniciar el tracker después de generar la alerta para evitar duplicación
                 data_transfer_tracker[device_id]["size"] = 0
@@ -590,7 +596,7 @@ def check_security_configuration_changes(logs):
                 "device_id": device_id,
                 "event_time": log_time.strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_security_configuration_changes")
 
 
 def clean_old_entries(ip, interval):
@@ -633,7 +639,7 @@ def check_suspicious_internal_connections(logs):
                 "dest_ip": dest_ip,
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_suspicious_internal_connections")
 
 
 def clean_old_application_entries(device_id, interval):
@@ -674,4 +680,4 @@ def check_application_specific_events(logs):
                 "device_id": device_id, 
                 "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
-            activate_alert(alert_id, message, context)
+            activate_alert(alert_id, message, context, "check_application_specific_events")

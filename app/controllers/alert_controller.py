@@ -19,6 +19,7 @@ class GetAlertsResponse(BaseModel):
     source_ip: str
     dest_ip: str
     severity: str
+    category: dict
     context: str
     status: int
     created_at: str
@@ -35,7 +36,7 @@ def get_all_alerts(
     db: Session = Depends(get_db)
 ):
     try:
-        alerts, total_alerts = alert_service.get_all_alerts(db=db, page=page, size=size)
+        alerts, total_alerts, alert_category = alert_service.get_all_alerts(db=db, page=page, size=size)
         if len(alerts) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -48,6 +49,7 @@ def get_all_alerts(
                 source_ip=alert.source_ip,
                 dest_ip=alert.dest_ip,
                 severity=alert.severity,
+                category={"name":alert_category.name, "description":alert_category.description},
                 context=alert.context,
                 status=alert.status,
                 created_at=alert.created_at.isoformat()
@@ -73,11 +75,11 @@ def get_all_alerts(
 # Endpoint para obtener alertas activas
 @router.get("/active")
 def get_active_alerts(
-    page: int = Query(1, ge=1),
-    size: int = Query(10, ge=10),
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db)
+    ):
+    
     try:
-        active_alerts, total_alerts = alert_service.get_active_alerts(db=db, page=page, size=size)
+        active_alerts = alert_service.get_active_alerts(db=db)
         if len(active_alerts) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -96,17 +98,9 @@ def get_active_alerts(
             ) for alert in active_alerts
         ]
 
-        total_pages = math.ceil(total_alerts / size)
-        
         return {
             "detail": "Alertas obtenidas exitosamente",
-            "data": alerts_data,
-            "pagination": {
-                "page": page,
-                "size": size,
-                "total_users": total_alerts,
-                "total_pages": total_pages
-            }
+            "data": alerts_data
         }
     
     except Exception as e:
@@ -144,7 +138,7 @@ def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session 
 def download_alerts(db: Session = Depends(get_db)):
     try:
         # Obtiene todas las alertas sin paginación
-        alerts, _ = alert_service.get_all_alerts(db=db, page=1, size=1000)
+        alerts, _, alert_category  = alert_service.get_all_alerts(db=db, page=1, size=1000)
         
         # Crear el archivo Excel en memoria
         output = BytesIO()
@@ -153,7 +147,7 @@ def download_alerts(db: Session = Depends(get_db)):
         sheet.title = "Alerts"
 
         # Encabezados
-        headers = ["ID", "Second ID", "Log IDs", "Message", "Source IP", "Dest IP", "Severity", "Context", "Status", "Created At"]
+        headers = ["ID", "Second ID", "Log IDs", "Message", "Source IP", "Dest IP", "Severity", "Context", "Category", "Status", "Created At"]
         sheet.append(headers)
 
         # Agregar los datos de las alertas
@@ -167,6 +161,7 @@ def download_alerts(db: Session = Depends(get_db)):
                 alert.dest_ip,
                 alert.severity,
                 alert.context,
+                alert_category.name,
                 alert.status,
                 alert.created_at.isoformat()
             ])

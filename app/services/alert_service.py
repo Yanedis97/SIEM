@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from app.models.alerts import Alerts
-from app.models.alerts_status import AlertsStatus
+from app.models.alerts_categories import AlertsCategory
 
 # Obtener todas las alertas con paginación
 def get_all_alerts(db: Session, page: int = 1, size: int = 10):
@@ -9,18 +9,20 @@ def get_all_alerts(db: Session, page: int = 1, size: int = 10):
         alerts = db.query(Alerts).order_by(Alerts.created_at.desc()).offset(start_from).limit(size).all()
         
         total_alerts = db.query(Alerts).count()
-        return alerts, total_alerts
+
+        if len(alerts) != 0:
+            alert_category = db.query(AlertsCategory).filter(AlertsCategory.id == alerts.alert_category).first()
+
+        return alerts, total_alerts, alert_category
     except Exception as e:
         raise e
 
 # Obtener alertas activas con paginación
-def get_active_alerts(db: Session, page: int = 1, size: int = 10):
+def get_active_alerts(db: Session):
     try:
-        start_from = (page - 1) * size
-        active_alerts = db.query(Alerts).filter(Alerts.status == 1).order_by(Alerts.created_at.desc()).offset(start_from).limit(size).all()
+        active_alerts = db.query(Alerts).filter(Alerts.status == 1).order_by(Alerts.created_at.desc()).all()
         
-        total_alerts = db.query(Alerts).count()
-        return active_alerts, total_alerts
+        return active_alerts
     except Exception as e:
         raise e
 
