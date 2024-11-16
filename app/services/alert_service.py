@@ -6,14 +6,28 @@ from app.models.alerts_categories import AlertsCategory
 def get_all_alerts(db: Session, page: int = 1, size: int = 10):
     try:
         start_from = (page - 1) * size
-        alerts = db.query(Alerts).order_by(Alerts.created_at.desc()).offset(start_from).limit(size).all()
+        alerts = db.query(
+                Alerts.id,
+                Alerts.second_id,
+                Alerts.log_ids,
+                Alerts.message,
+                Alerts.source_ip,
+                Alerts.dest_ip,
+                Alerts.severity,
+                Alerts.context,
+                AlertsCategory.name,
+                AlertsCategory.description,
+                Alerts.status,
+                Alerts.created_at
+            ).join(
+                AlertsCategory, Alerts.alert_category == AlertsCategory.id
+            ).order_by(
+                Alerts.created_at.desc()
+                ).offset(start_from).limit(size).all()
         
         total_alerts = db.query(Alerts).count()
 
-        if len(alerts) != 0:
-            alert_category = db.query(AlertsCategory).filter(AlertsCategory.id == alerts.alert_category).first()
-
-        return alerts, total_alerts, alert_category
+        return alerts, total_alerts
     except Exception as e:
         raise e
 

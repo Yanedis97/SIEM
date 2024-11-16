@@ -36,7 +36,7 @@ def get_all_alerts(
     db: Session = Depends(get_db)
 ):
     try:
-        alerts, total_alerts, alert_category = alert_service.get_all_alerts(db=db, page=page, size=size)
+        alerts, total_alerts = alert_service.get_all_alerts(db=db, page=page, size=size)
         if len(alerts) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -49,7 +49,7 @@ def get_all_alerts(
                 source_ip=alert.source_ip,
                 dest_ip=alert.dest_ip,
                 severity=alert.severity,
-                category={"name":alert_category.name, "description":alert_category.description},
+                category={"name":alert.name, "description":alert.description},
                 context=alert.context,
                 status=alert.status,
                 created_at=alert.created_at.isoformat()
@@ -138,7 +138,7 @@ def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session 
 def download_alerts(db: Session = Depends(get_db)):
     try:
         # Obtiene todas las alertas sin paginación
-        alerts, _, alert_category  = alert_service.get_all_alerts(db=db, page=1, size=1000)
+        alerts, _  = alert_service.get_all_alerts(db=db, page=1, size=1000)
         
         # Crear el archivo Excel en memoria
         output = BytesIO()
@@ -161,7 +161,7 @@ def download_alerts(db: Session = Depends(get_db)):
                 alert.dest_ip,
                 alert.severity,
                 alert.context,
-                alert_category.name,
+                alert.name,
                 alert.status,
                 alert.created_at.isoformat()
             ])
