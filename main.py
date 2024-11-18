@@ -151,6 +151,17 @@ RULES_CONFIG = {
     }
 }
 
+def update_log(log_id):
+    # Actualización del documento
+    es.update(
+        index="logs",
+        id=log_id,
+        body={
+            "doc": {
+                "has_alert": 1
+            }
+        }
+    )
 
 def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     """

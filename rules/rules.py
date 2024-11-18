@@ -3,6 +3,8 @@ from collections import defaultdict
 from database.db_connection import SessionLocal
 from app.models.alerts import Alerts
 from app.models.alerts_categories import AlertsCategory
+from main import update_log
+import json
 
 # Parámetros de reglas de correlación
 TIME_RELATION_THRESHOLD = 5  # en minutos
@@ -64,6 +66,9 @@ def activate_alert(alert_id: str, message: str, context: dict = {}, category:str
     session = SessionLocal()
     try:
 
+        update_log(str(context.get("log_ids","")))
+        context = json.dumps(context) if context != {} else ""
+
         alert_category = session.query(AlertsCategory).filter(AlertsCategory.code == category).first()
         if alert_category is None:
             raise ValueError("No se encontro información de la categoria de la alerta")
@@ -89,8 +94,8 @@ def activate_alert(alert_id: str, message: str, context: dict = {}, category:str
         print(f"Error al guardar la alerta: {e}")
     finally:
         session.close()
-        
 
+        
 def check_brute_force(logs):
     """
     Detecta ataques de fuerza bruta basados en intentos fallidos en los logs de autenticación.
@@ -263,18 +268,20 @@ def process_snort_log(log_entry):
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
                 alert_id = f"snort_alert_{sid}_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
                 
-                # Verifica si la alerta ya está activa para evitar duplicación
-                if not is_alert_active(alert_id):
-                    message = f"{alert_type}: {alert_message} desde {source_ip} hacia {dest_ip} usando {protocol}"
-                    context = {
-                        "source_ip": source_ip,
-                        "dest_ip": dest_ip,
-                        "alert_message": alert_message,
-                        "protocol": protocol,
-                        "alert_type": alert_type,
-                        "timestamp": timestamp.isoformat()
-                    }
-                    activate_alert(alert_id, message, context, "process_snort_log")
+                if log_entry['_source'].get('has_alert',0) == 0:
+                    # Verifica si la alerta ya está activa para evitar duplicación
+                    if not is_alert_active(alert_id):
+                        message = f"{alert_type}: {alert_message} desde {source_ip} hacia {dest_ip} usando {protocol}"
+                        context = {
+                            "source_ip": source_ip,
+                            "dest_ip": dest_ip,
+                            "alert_message": alert_message,
+                            "protocol": protocol,
+                            "alert_type": alert_type,
+                            "timestamp": timestamp.isoformat(),
+                            "log_ids": log_entry.get('_id', '')
+                        }
+                        activate_alert(alert_id, message, context, "check_snort_alert")
             except ValueError:
                 print(f"Formato de fecha inválido en log: {timestamp_str}")
 
