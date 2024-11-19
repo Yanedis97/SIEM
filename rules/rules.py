@@ -3,7 +3,7 @@ from collections import defaultdict
 from database.db_connection import SessionLocal
 from app.models.alerts import Alerts
 from app.models.alerts_categories import AlertsCategory
-from main import update_log
+from app.services.log_service import update_log
 import json
 
 # Parámetros de reglas de correlación

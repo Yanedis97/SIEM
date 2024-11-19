@@ -13,3 +13,16 @@ def get_all_logs(page: int = 1, size: int = 10):
         return logs
     except Exception as e:
         raise e
+
+
+def update_log(log_id):
+    # Actualización del documento
+    es.update(
+        index="logs",
+        id=log_id,
+        body={
+            "doc": {
+                "has_alert": 1
+            }
+        }
+    )
