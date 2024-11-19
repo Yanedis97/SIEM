@@ -68,7 +68,7 @@ RULES_CONFIG = {
     "privilege_changes": {
         "function": rules.check_privilege_change,
         "devices": ["app_server", "idm_server"],
-        "log_size": 1,
+        "log_size": 1000,
         "time_window": None  # En tiempo real
     },
     "anomalous_traffic": {
@@ -79,20 +79,20 @@ RULES_CONFIG = {
     },
     "system_errors": {
         "function": rules.check_system_errors,
-        "devices": ["os_server"],
-        "log_size": 1,
+        "devices": ["os_server"], 
+        "log_size": 1000,
         "time_window": None  # En tiempo real
     },
     "snort_alert": {
         "function": rules.check_snort_alert,
         "devices": ["snort"],
-        "log_size": 1,
+        "log_size": 1000,
         "time_window": None  # En tiempo real
     },
     "time_related_events": {
         "function": rules.check_time_related_events,
         "devices": ["any_device"],
-        "log_size": 5,
+        "log_size": 1000,
         "time_window": "now-5m"
     },
     "apt": {

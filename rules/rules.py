@@ -67,7 +67,7 @@ def activate_alert(alert_id: str, message: str, context: dict = {}, category:str
     try:
 
         update_log(str(context.get("log_ids","")))
-        context = json.dumps(context) if context != {} else ""
+        context_str = json.dumps(context) if context != {} else ""
 
         alert_category = session.query(AlertsCategory).filter(AlertsCategory.code == category).first()
         if alert_category is None:
@@ -81,7 +81,7 @@ def activate_alert(alert_id: str, message: str, context: dict = {}, category:str
             source_ip = context.get("source_ip",None),  
             dest_ip = context.get("source_ip",None),
             severity = 1,  
-            context = context,
+            context = context_str,
             alert_category = alert_category.id,
             status = 1,
             created_at = datetime.now()
