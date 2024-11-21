@@ -8,6 +8,7 @@ from utils import elasticsearch
 from rules import rules
 import uvicorn
 import time
+from datetime import datetime, timedelta
 
 es = elasticsearch.connect_elasticsearch()
 
@@ -62,7 +63,7 @@ RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
         "devices": ["auth_server"],
-        "log_size": 10,
+        "log_size": 1000,
         "time_window": "now-5m"
     },
     "privilege_changes": {
@@ -87,7 +88,7 @@ RULES_CONFIG = {
         "function": rules.check_snort_alert,
         "devices": ["snort"],
         "log_size": 1000,
-        "time_window": None  # En tiempo real
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "time_related_events": {
         "function": rules.check_time_related_events,

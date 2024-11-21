@@ -238,11 +238,10 @@ def process_snort_log(log_entry):
         protocol = log_entry['_source'].get('protocol', 'Protocolo desconocido')
         sid = log_entry['_source'].get('sid', 'SID desconocido')
         
+        alert_type = ""
         # Clasificación de alertas basada en el mensaje
         if "Potente ataque DDos detectado" in alert_message or "Powerful DDoS attack detected" in alert_message:
             alert_type = "Ataque DDoS Detectado"
-        elif "ICMP echo request detectado" in alert_message or "ICMP echo request detected" in alert_message:
-            alert_type = "Detección de ICMP Echo Request (Ping)"
         elif "Exploración de puertos" in alert_message or "Port Scan" in alert_message:
             alert_type = "Exploración de Puertos Detectada"
         elif "Inyección SQL" in alert_message or "SQL Injection" in alert_message:

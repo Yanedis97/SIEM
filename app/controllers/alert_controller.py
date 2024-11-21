@@ -24,6 +24,19 @@ class GetAlertsResponse(BaseModel):
     status: int
     created_at: str
 
+
+class GetActiveAlertsResponse(BaseModel):
+    id: int
+    second_id: str
+    log_ids: str
+    message: str
+    source_ip: str
+    dest_ip: str
+    severity: str
+    context: str
+    status: int
+    created_at: str
+
 # Modelo para actualizar el estado de una alerta
 class UpdateAlertRequest(BaseModel):
     status: int
@@ -64,7 +77,7 @@ def get_all_alerts(
             "pagination": {
                 "page": page,
                 "size": size,
-                "total_users": total_alerts,
+                "total_alerts": total_alerts,
                 "total_pages": total_pages
             }
         }
@@ -84,7 +97,7 @@ def get_active_alerts(
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
         alerts_data = [
-            GetAlertsResponse(
+            GetActiveAlertsResponse(
                 id=alert.id,
                 second_id=alert.second_id,
                 log_ids=alert.log_ids,
