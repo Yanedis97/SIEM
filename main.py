@@ -53,7 +53,7 @@ if not es.indices.exists(index=INDEX):
     es.indices.create(index=INDEX)
 
 # Intervalo para leer los logs (en segundos)
-READ_INTERVAL = 30
+READ_INTERVAL = 50
 
 # Último timestamp procesado (puede iniciarse como 'now-1d' o leerlo de la base de datos)
 last_timestamp = "now-1d"
@@ -62,21 +62,21 @@ last_timestamp = "now-1d"
 RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
-        "devices": ["auth_server"],
+        "devices": ["server_linux","windows_event","linux_log"],
         "log_size": 1000,
-        "time_window": "now-5m"
+        "time_window": (datetime.now() - timedelta(minutes=10)).isoformat()
     },
     "privilege_changes": {
         "function": rules.check_privilege_change,
-        "devices": ["app_server", "idm_server"],
+        "devices": ["server_linux","windows_event","linux_log"],
         "log_size": 1000,
-        "time_window": None  # En tiempo real
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "anomalous_traffic": {
         "function": rules.check_suspicious_traffic,
-        "devices": ["firewall", "router"],
+        "devices": ["firewall", "router", "switch", "server_linux"],
         "log_size": 1000,
-        "time_window": "now-10m"
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "system_errors": {
         "function": rules.check_system_errors,
@@ -133,10 +133,10 @@ RULES_CONFIG = {
         "time_window": "now-15m"
     },
     "data_exfiltration": {
-    "function": rules.check_data_exfiltration,
-    "devices": ["firewall", "file_server", "network_device"],
-    "log_size": 1000, 
-    "time_window": "now-10m"
+        "function": rules.check_data_exfiltration,
+        "devices": ["firewall", "file_server", "network_device"],
+        "log_size": 1000, 
+        "time_window": "now-10m"
     },
     "security_config_changes": {
         "function": rules.check_security_configuration_changes,

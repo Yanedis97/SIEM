@@ -9,7 +9,6 @@ import json
 # Parámetros de reglas de correlación
 TIME_RELATION_THRESHOLD = 5  # en minutos
 BRUTE_FORCE_THRESHOLD = 3    # Mínimo de intentos fallidos
-MAX_ATTEMPTS = 10            # Máximo de intentos fallidos permitidos
 SUSPICIOUS_TRAFFIC_THRESHOLD = 1000  # Umbral de eventos para tráfico sospechoso
 SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL = 500  # Umbral reducido para redes pequeñas
 TRAFFIC_WINDOW = timedelta(minutes=10)  # Ventana de tiempo de 10 minutos
@@ -66,7 +65,6 @@ def activate_alert(alert_id: str, message: str, context: dict = {}, category:str
     session = SessionLocal()
     try:
 
-        update_log(str(context.get("log_ids","")))
         context_str = json.dumps(context) if context != {} else ""
 
         alert_category = session.query(AlertsCategory).filter(AlertsCategory.code == category).first()
@@ -104,27 +102,50 @@ def check_brute_force(logs):
         es_client: Cliente Elasticsearch
     """
     for log in logs:
+        log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
         src_ip = log["_source"].get("src_ip")
         msg = log["_source"].get("msg", "")
+        auth_alert = log["_source"].get("auth_alert", 0)
         
-        if "authentication failed" in msg.lower():  
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-            login_tracker[src_ip].append(log_time)
+        if "authentication failure" in msg.lower() or "failed password" in msg.lower():  
+            if auth_alert == 0:
+                log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+                login_tracker[src_ip].append(log_time, log_id)
 
-    for ip, timestamps in login_tracker.items():
-        clean_old_entries(ip, TIME_RELATION_THRESHOLD)
+    for ip, timestamps_and_ids in login_tracker.items():
+        
+        if len(timestamps_and_ids) >= BRUTE_FORCE_THRESHOLD:
+            
+            # Ordenamos los intentos por timestamp
+            timestamps_and_ids.sort(key=lambda x: x[0])
 
-        if len(timestamps) >= BRUTE_FORCE_THRESHOLD:
-            if len(timestamps) <= MAX_ATTEMPTS:
-                alert_id = f"brute_force_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                message = f"Posible ataque de fuerza bruta detectado desde la IP {ip}. {len(timestamps)} intentos fallidos en los últimos {TIME_RELATION_THRESHOLD} minutos."
-                context = {
-                    "log_ids": [log["_id"] for log in logs], 
-                    "source_ip": ip, 
-                    "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }
-                activate_alert(alert_id, message, context, "check_brute_force")
+            # Recorremos los intentos y validamos si hay 3 en el rango de 5 minutos
+            for i in range(len(timestamps_and_ids) - 2):  # -2 porque necesitamos al menos 3 intentos
+                time_window_start = timestamps_and_ids[i][0]  # El primer timestamp del rango
+                time_window_end = time_window_start + timedelta(minutes=5)  # Rango de 5 minutos
+                
+                # Contamos cuántos logs están dentro del rango de 5 minutos
+                count_in_time_window = sum(
+                    1 for timestamp, _ in timestamps_and_ids[i:i+3]  # Revisa los siguientes 3 logs
+                    if time_window_start <= timestamp <= time_window_end
+                )
+
+                if count_in_time_window >= 3:
+                    alert_id = f"brute_force_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    message = f"Posible ataque de fuerza bruta detectado desde la IP {ip}. {len(timestamps_and_ids)} intentos fallidos en los últimos {TIME_RELATION_THRESHOLD} minutos."
+    
+                    log_ids = [log["_id"] for log in logs]
+                    context = {
+                        "log_ids": log_ids, 
+                        "source_ip": ip, 
+                        "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+
+                    for log_id in log_ids:
+                        update_log(str(log_id), "auth_alert")
+                    activate_alert(alert_id, message, context, "check_brute_force")
+                    break
 
 
 def check_privilege_change(logs):
@@ -136,18 +157,25 @@ def check_privilege_change(logs):
     for log in logs:
         timestamp = log["_source"].get("timestamp")
         msg = log["_source"].get("msg", "")
+        has_alert = log["_source"].get("has_alert", 0)
         
-        if "privilege change" in msg.lower(): 
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-            
-            alert_id = f"privilege_change_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            message = f"Cambio de privilegio detectado: {msg}. Log ID: {log['_id']}"
-            context = {
-                "log_ids": [log["_id"]],
-                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "msg": msg
-            }
-            activate_alert(alert_id, message, context, "check_privilege_change")
+        if "privilege change" in msg.lower():
+            if has_alert == 0:
+                try:
+                    log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+                except ValueError:
+                    continue 
+                
+                alert_id = f"privilege_change_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                message = f"Cambio de privilegio detectado: {msg}. Log ID: {log['_id']}"
+                context = {
+                    "log_ids": [log["_id"]],
+                    "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "msg": msg,
+                    "log_time": log_time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+                update_log(str(context.get("log_ids","")), "has_alert")
+                activate_alert(alert_id, message, context, "check_privilege_change")
 
 
 def check_suspicious_traffic(logs):
@@ -266,6 +294,9 @@ def process_snort_log(log_entry):
                             "timestamp": timestamp.isoformat(),
                             "log_ids": log_entry.get('_id', '')
                         }
+                        
+                        update_log(str(context.get("log_ids","")), "has_alert")
+                        
                         activate_alert(alert_id, message, context, "check_snort_alert")
             except ValueError:
                 print(f"Formato de fecha inválido en log: {timestamp_str}")

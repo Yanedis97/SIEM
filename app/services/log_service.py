@@ -15,14 +15,14 @@ def get_all_logs(page: int = 1, size: int = 10):
         raise e
 
 
-def update_log(log_id):
+def update_log(log_id, key_name):
     # Actualización del documento
     es.update(
         index="logs",
         id=log_id,
         body={
             "doc": {
-                "has_alert": 1
+                key_name: 1
             }
         }
     )

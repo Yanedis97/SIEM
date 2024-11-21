@@ -33,6 +33,9 @@ class LogNormalizer:
                 log_data = match.groupdict()
                 log_data['type'] = log_type
 
+                # Establecer valor predeterminado para 'src_ip'
+                log_data['src_ip'] = log_data.get('src_ip', "Desconocido")
+
                 if 'timestamp' not in log_data:
                     log_data['timestamp'] = "Desconocido"
                 else:
@@ -119,6 +122,12 @@ def start_monitoring(log_directory, es):
         r'(?P<index>\d+)\s+(?P<month>\w+)\s+(?P<day>\d+)\s+(?P<time>\d{2}:\d{2}:\d{2})\s+(?P<entry_type>\w+)\s+(?P<source>[\w\s\(\)\-]+)\s+(?P<instance_id>\d+)\s+(?P<message>.+)',
         'powershell_log'
     )
+
+    normalizer.add_pattern(
+        r'(?P<timestamp>\w{3} \d{1,2} \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<service>\S+)\[(?P<pid>\d+)\]: (?P<msg>.+?)(?: from (?P<src_ip>\d+\.\d+\.\d+\.\d+))?(?: port \d+)?(?: ssh2)?',
+        'server_linux'
+    )
+
 
     event_handler = LogHandler(normalizer)
     observer = Observer()
