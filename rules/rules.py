@@ -5,9 +5,11 @@ from app.models.alerts import Alerts
 from app.models.alerts_categories import AlertsCategory
 from app.services.log_service import update_log
 import json
+import re
 
 # Parámetros de reglas de correlación
 TIME_RELATION_THRESHOLD = 5  # en minutos
+EVENT_TIME_WINDOW = timedelta(minutes=5)
 BRUTE_FORCE_THRESHOLD = 3    # Mínimo de intentos fallidos
 SUSPICIOUS_TRAFFIC_THRESHOLD = 1000  # Umbral de eventos para tráfico sospechoso
 SUSPICIOUS_TRAFFIC_THRESHOLD_SMALL = 500  # Umbral reducido para redes pequeñas
@@ -228,22 +230,58 @@ def check_system_errors(logs):
     Args:
         logs: Logs extraídos de Elasticsearch
     """
+
+    # Definir patrones que indiquen errores críticos en los logs
+    critical_error_patterns = [
+        # Windows Errors (English and Spanish)
+        r".*(The system has rebooted without cleanly shutting down first|Un dispositivo conectado al sistema no está funcionando).*",
+        r".*(Windows failed to start|Windows no pudo iniciarse).*",
+        r".*(The driver detected a controller error on|El controlador detectó un error en el controlador).*",
+        r".*(Service failed to start|El servicio no pudo iniciarse).*",
+        r".*(Network connection lost|Conexión de red perdida).*",
+        r".*(The trust relationship between this workstation and the primary domain failed|La relación de confianza entre esta estación de trabajo y el dominio primario falló).*",
+        
+        # Linux Errors (English and Spanish)
+        r".*(kernel panic|pánico del kernel).*",
+        r".*(critical error|error crítico).*",
+        r".*(Out of memory|Fuera de memoria).*",
+        r".*(disk failure|fallo de disco).*",
+        r".*(no space left on device|No hay espacio disponible en el dispositivo).*",
+        r".*(failed to mount|No se pudo montar).*",
+        r".*(unable to load module|No se pudo cargar el módulo).*",
+        
+        # macOS Errors (English and Spanish)
+        r".*(kernel panic|pánico del kernel).*",
+        r".*(device not found|Dispositivo no encontrado).*",
+        r".*(disk failure|Fallo de disco).*",
+        r".*(out of memory|Falta de memoria).*",
+        r".*(unable to boot|No se puede iniciar).*",
+        r".*(the system cannot find the path specified|El sistema no puede encontrar la ruta especificada).*"
+    ]
+
     for log in logs:
         timestamp = log["_source"].get("timestamp")
         msg = log["_source"].get("msg", "")
+        system_alert = log["_source"].get("system_alert", 0)
 
-        # Considera solo los logs con errores críticos
-        if "critical error" in msg.lower():  # Esto puede depender de cómo se registran los errores en los logs
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-            
-            alert_id = f"critical_error_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            message = f"Error crítico detectado: {msg}. Log ID: {log['_id']}"
-            context = {
-                "log_ids": [log["_id"]], 
-                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "msg": msg
-            }
-            activate_alert(alert_id, message, context, "check_system_errors")
+        if system_alert == 0:
+            if any(re.search(pattern, msg, re.IGNORECASE) for pattern in critical_error_patterns):
+                try:
+                    log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+                except (ValueError, TypeError):
+                    # Si falla, usar la hora actual
+                    log_time = datetime.now()
+                
+                alert_id = f"critical_error_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                message = f"Error crítico detectado: {msg}. Log ID: {log['_id']}"
+                context = {
+                    "log_ids": log.get('_id', ''), 
+                    "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "msg": msg,
+                    "log_time": log_time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+                update_log(str(context.get("log_ids","")), "system_alert")
+                activate_alert(alert_id, message, context, "check_system_errors")
 
 
 def check_snort_alert(logs):
@@ -304,138 +342,370 @@ def process_snort_log(log_entry):
 
 def check_time_related_events(logs):
     """
-    Detecta más de 5 eventos desde una misma IP en los últimos 5 minutos.
+    Detecta eventos relacionados con la hora o el tiempo, como accesos inusuales fuera del horario laboral 
+    o múltiples eventos sospechosos en un corto período.
     Args:
-        logs: Logs extraídos de Elasticsearch.
+        logs: Logs extraídos de los dispositivos generadores de logs
     """
     for log in logs:
+        log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
         src_ip = log["_source"].get("src_ip")
-        
-        log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-        event_tracker[src_ip].append(log_time)
 
-    # Limpiar entradas antiguas (basado en la ventana de 5 minutos)
+        if "time_related_alert" not in log["_source"] or log["_source"].get("time_related_alert", 0) == 0:
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+
+            # Si el evento está fuera del horario laboral (7:00 am - 6:00 pm)
+            if log_time.time() < datetime.strptime("07:00", "%H:%M").time() or log_time.time() > datetime.strptime("18:00", "%H:%M").time():
+                event_tracker[src_ip].append(log_time)
+
     for ip, timestamps in event_tracker.items():
-        clean_old_entries(ip, TIME_RELATION_THRESHOLD)
+        if len(timestamps) >= 5:
+            timestamps.sort()
 
-        # Verificar si el número de eventos supera el umbral
-        if len(timestamps) > 5:
-            alert_id = f"time_related_events_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            message = f"Más de 5 eventos detectados desde la IP {ip} en los últimos 5 minutos."
-            context = {
-                "log_ids": [log["_id"] for log in logs], 
-                "source_ip": ip, 
-                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            activate_alert(alert_id, message, context, "check_time_related_events")
+            # Recorremos los eventos y validamos si hay más de 5 en el rango de 5 minutos
+            for i in range(len(timestamps) - 4):  # -4 porque necesitamos al menos 5 eventos
+                time_window_start = timestamps[i]  # El primer timestamp del rango
+                time_window_end = time_window_start + EVENT_TIME_WINDOW  # Rango de 5 minutos
+                
+                count_in_time_window = sum(
+                    1 for timestamp in timestamps[i:i+5]  # Revisa los siguientes 5 logs
+                    if time_window_start <= timestamp <= time_window_end
+                )
 
+                if count_in_time_window >= 5:
+                    alert_id = f"time_related_events_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    message = f"Posible actividad sospechosa: más de 5 eventos desde la IP {ip} fuera del horario laboral o en un corto intervalo de tiempo."
+                    
+                    log_ids = [log["_id"] for log in logs]
+                    context = {
+                        "log_ids": log_ids, 
+                        "source_ip": ip, 
+                        "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
 
-def check_apt(logs):
+                    for log_id in log_ids:
+                        update_log(str(log_id), "time_related_alert")
+                    
+                    activate_alert(alert_id, message, context, "check_time_related_events")
+
+#-------------------------------------------------------------------------------7-----------------------------------------------------------------------------------------------
+
+def check_apt(logs, time_window=30, threshold=3):
     """
-    Detecta posibles APTs basados en el umbral de más de 20 eventos en un intervalo de 30 minutos.
+    Detecta posibles ataques APT en función de múltiples intentos fallidos seguidos de un intento exitoso.
     Args:
-        logs: Logs extraídos de Elasticsearch
+        logs: Lista de logs extraídos.
+        time_window: Ventana de tiempo para correlacionar eventos en minutos.
+        threshold: Umbral de intentos fallidos para activar una alerta.
+    Returns:
+        alert_logs: Lista de alertas generadas.
     """
-    # Utiliza un diccionario para rastrear los eventos por dispositivo
-    apt_tracker = defaultdict(list)
+    event_groups = defaultdict(list)
 
+    # Definir patrones de error comunes (sin especificar SO)
+    error_patterns = [
+        "Failed password",  # Intento de acceso fallido
+        "authentication failure",  # Fallo en la autenticación
+        "sudo: no tty present",  # Escalada de privilegios fallida
+        "Segmentation fault",  # Comportamiento anómalo
+        "Logon failure: user account locked",  # Acceso fallido
+        "Access Denied",  # Acceso denegado
+        "Failed to login",  # Error de inicio de sesión
+        "Authentication failed",  # Autenticación fallida
+    ]
+
+    # Correlacionar los logs por IP y usuario dentro de un intervalo de tiempo
     for log in logs:
-        timestamp = log["_source"].get("timestamp")
-        device = log["_source"].get("device")  # Asumiendo que cada log tiene un campo 'device'
+        for other_log in logs:
+            if log["_source"].get("src_ip") == other_log["_source"].get("src_ip") and log["_source"].get("hostname") == other_log["_source"].get("hostname"):
+                # Verificar si los logs están dentro del intervalo de tiempo
+                if abs((log["_source"].get("timestamp") - other_log["_source"].get("timestamp")).total_seconds()) <= time_window * 60:
+                    # Comprobar si el mensaje de log contiene patrones de error definidos
+                    if any(pattern.lower() in (other_log["_source"].get("msg","")).lower() for pattern in error_patterns):
+                        event_groups[(log["_source"].get("src_ip"), log["_source"].get("hostname"))].append((log["_source"].get("timestamp"), log["_source"].get("msg", ""), log["_id"]))
 
-        # Convertimos el timestamp a un objeto datetime
-        log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-        
-        # Añadir evento al rastreador de APT
-        apt_tracker[device].append(log_time)
+    # Validar la secuencia de eventos repetidos (ejemplo: varios intentos fallidos seguidos de un intento exitoso)
+    for group, events in event_groups.items():
+        failed_attempts = 0
+        success_attempt = False
+        log_ids = []
+        unmarked_failed_attempts = 0
 
-    # Limpiar entradas antiguas (más de 30 minutos)
-    for device, timestamps in apt_tracker.items():
-        clean_old_entries(device, 30)  # Limpiar registros mayores a 30 minutos
+        # Ordenar los eventos por timestamp
+        events_sorted = sorted(events, key=lambda e: e[0])
 
-        # Verificar si el número de eventos supera el umbral de 20 eventos en 30 minutos
-        if len(timestamps) > 20:
-            alert_id = f"apt_alert_{device}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            message = f"Posible APT detectada en el dispositivo {device}. Más de 20 eventos en los últimos 30 minutos."
+        for event in events_sorted:
+            event_msg = event[1].lower()
+            if "failed" in event_msg: 
+                # Solo contar intentos fallidos que no están marcados con "login_apt_alert" = 1
+                if not any(log["_id"] == event[2] and log["_source"].get("login_apt_alert") == 1 for log in logs):
+                    failed_attempts += 1
+                    unmarked_failed_attempts += 1  # Contar intentos fallidos no marcados
+            elif "success" in event_msg:  # Intento exitoso
+                success_attempt = True
+            
+            # Agregar el ID de log a la lista de log_ids
+            log_ids.append(event[2])
+
+        # Si se detectan más de un umbral de intentos fallidos seguidos de un intento exitoso
+        if failed_attempts >= threshold and success_attempt:
+            alert_id = f"login_apt_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            message = f"Se detectaron {unmarked_failed_attempts} intentos fallidos seguidos de un intento exitoso. Posible ataque APT."
+
+            log_ids = [log["_id"] for log in logs]
             context = {
-                "log_ids": [log["_id"] for log in logs],
-                "device": device,
-                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "log_ids": log_ids, 
+                "source_ip": group[0],
+                "user_id": group[1],
+                "event_count": len(events),
+                "events": events
             }
+
+            for log_id in log_ids:
+                if not any(log["_id"] == log_id and log["_source"].get("login_apt_alert") == 1 for log in logs):
+                    update_log(log_id, "login_apt_alert")
+
             activate_alert(alert_id, message, context, "check_apt")
 
+            correlate_file_access(logs)
+            correlate_command_execution(logs)
+            correlate_access_to_multiple_systems(logs)
+            break
+
+
+def correlate_file_access(logs):
+    access_patterns = defaultdict(list)
+    
+    # Definir la ventana de tiempo en la que se correlacionan los accesos
+    time_window = timedelta(minutes=30)
+    
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        file_accessed = log["_source"].get("file", "")
+        user = log["_source"].get("hostname", "")
+        
+        try:
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            log_time = datetime.now()
+        
+        # Si el archivo y el usuario son relevantes, registrar la información
+        if file_accessed and user:
+            access_patterns[file_accessed].append({"user": user, "time": log_time})
+    
+    # Revisar patrones de acceso a archivos
+    for file, accesses in access_patterns.items():
+        # Si más de X accesos al mismo archivo dentro de la ventana de tiempo
+        if len(accesses) > 5:
+            first_access_time = accesses[0]["time"]
+            last_access_time = accesses[-1]["time"]
+            
+            if last_access_time - first_access_time <= time_window:
+                alert_message = f"Acceso sospechoso al archivo {file} por el usuario {accesses[0]['user']} en un corto período de tiempo."
+                alert_id = f"file_access_{file}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                context = {
+                    "file": file,
+                    "user": accesses[0]['user'],
+                    "first_access_time": first_access_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "last_access_time": last_access_time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                activate_alert(alert_id, alert_message, context, "check_apt")
+
+def correlate_command_execution(logs):
+    command_sequences = defaultdict(list)
+    
+    # Definir la ventana de tiempo en la que se correlacionan los comandos
+    time_window = timedelta(minutes=15)
+    
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        command = log["_source"].get("command", "")
+        user = log["_source"].get("user", "")
+        
+        try:
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            log_time = datetime.now()
+        
+        if command and user:
+            command_sequences[user].append({"command": command, "time": log_time})
+    
+    # Detectar secuencias de comandos ejecutados rápidamente
+    for user, commands in command_sequences.items():
+        # Si hay más de X comandos ejecutados en rápida sucesión
+        if len(commands) > 3:
+            first_command_time = commands[0]["time"]
+            last_command_time = commands[-1]["time"]
+            
+            if last_command_time - first_command_time <= time_window:
+                alert_message = f"Comandos ejecutados de manera secuencial por el usuario {user} en un corto período de tiempo."
+                alert_id = f"command_sequence_{user}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                context = {
+                    "user": user,
+                    "first_command": commands[0]['command'],
+                    "last_command": commands[-1]['command'],
+                    "first_command_time": first_command_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "last_command_time": last_command_time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                activate_alert(alert_id, alert_message, context, "check_apt")
+
+def correlate_access_to_multiple_systems(logs):
+    access_patterns = defaultdict(list)
+    
+    # Definir la ventana de tiempo en la que se correlacionan los accesos
+    time_window = timedelta(minutes=30)
+    
+    for log in logs:
+        timestamp = log["_source"].get("timestamp")
+        system_accessed = log["_source"].get("system", "")
+        user = log["_source"].get("user", "")
+        
+        try:
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            log_time = datetime.now()
+        
+        if system_accessed and user:
+            access_patterns[user].append({"system": system_accessed, "time": log_time})
+    
+    # Revisar patrones de acceso a múltiples sistemas
+    for user, accesses in access_patterns.items():
+        if len(accesses) > 3:
+            first_access_time = accesses[0]["time"]
+            last_access_time = accesses[-1]["time"]
+            
+            if last_access_time - first_access_time <= time_window:
+                alert_message = f"Acceso a múltiples sistemas por el usuario {user} en un corto período de tiempo."
+                alert_id = f"multiple_systems_access_{user}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                context = {
+                    "user": user,
+                    "first_access_time": first_access_time.strftime("%Y-%m-%d %H:%M:%S"),
+                    "last_access_time": last_access_time.strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                activate_alert(alert_id, alert_message, context, "check_apt")
+
+#-------------------------------------------------------------------------------7-----------------------------------------------------------------------------------------------
 
 def check_recon_activity(logs):
     """
-    Detecta escaneos de red (recon) basados en múltiples intentos en un corto periodo de tiempo.
+    Detecta actividades de recopilación de información (escaneos de puertos, mapeo de redes).
     Args:
         logs: Logs extraídos de Elasticsearch
     """
-    recon_tracker = defaultdict(list)  # Para almacenar intentos de escaneo por IP y dispositivo
-    recon_threshold = 3  # Umbral mínimo de intentos para detectar un escaneo
-    recon_window = timedelta(minutes=3)  # Ventana de tiempo de 3 minutos
+    # Seguimiento de intentos de escaneo por IP
+    scan_tracker = defaultdict(list)
 
+    # Definir palabras clave que podrían indicar un escaneo
+    recon_keywords = [
+        "port scan", "network scan", "Nmap", "network mapping",  
+        "connection attempt", "scan attempt", "suspicious probe",
+        "icmp echo request", "icmp probe", "ARP request",
+    ]
+    
     for log in logs:
+        log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
         src_ip = log["_source"].get("src_ip")
-        dest_ip = log["_source"].get("dest_ip")
         msg = log["_source"].get("msg", "")
+        recon_alert = log["_source"].get("recon_alert", 0)
         
-        # Considerar logs de routers y switches
-        if "router" in msg.lower() or "switch" in msg.lower():
+        # Verificar si el mensaje de log contiene alguna palabra clave de escaneo
+        if any(keyword.lower() in msg.lower() for keyword in recon_keywords) and recon_alert == 0:  
             log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-            recon_tracker[(src_ip, dest_ip)].append(log_time)
+            scan_tracker[src_ip].append(log_time)
 
-    # Limpiar entradas antiguas (en base a la ventana de 3 minutos)
-    for (src_ip, dest_ip), timestamps in recon_tracker.items():
-        clean_old_entries((src_ip, dest_ip), 3)
+    for ip, timestamps in scan_tracker.items():
+        if len(timestamps) >= BRUTE_FORCE_THRESHOLD:  # 3 intentos o más
+            # Ordenamos los intentos por timestamp
+            timestamps.sort()
 
-        # Verificar si el número de intentos supera el umbral
-        if len(timestamps) >= recon_threshold:
-            alert_id = f"recon_activity_{src_ip}_{dest_ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            message = f"Posible escaneo de red detectado desde la IP {src_ip} hacia el dispositivo {dest_ip}. {len(timestamps)} intentos en los últimos 3 minutos."
-            context = {
-                "log_ids": [log["_id"] for log in logs],
-                "source_ip": src_ip,
-                "dest_ip": dest_ip,
-                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            activate_alert(alert_id, message, context, "check_recon_activity")
+            # Recorremos los intentos y validamos si hay entre 3 y 5 intentos en el rango de 3 minutos
+            for i in range(len(timestamps) - 2):  # Al menos 3 intentos
+                time_window_start = timestamps[i]  # El primer timestamp del rango
+                time_window_end = time_window_start + timedelta(minutes=3)  # Rango de 3 minutos
+                
+                # Contamos cuántos logs están dentro del rango de 3 minutos
+                count_in_time_window = sum(
+                    1 for timestamp in timestamps[i:i+5]  # Revisa los siguientes 5 logs
+                    if time_window_start <= timestamp <= time_window_end
+                )
+
+                if count_in_time_window >= 3:
+                    alert_id = f"recon_activity_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    message = f"Posible actividad de recopilación de información detectada desde la IP {ip}. {len(timestamps)} intentos de escaneo en los últimos 3 minutos."
+    
+                    log_ids = [log["_id"] for log in logs]
+                    context = {
+                        "log_ids": log_ids, 
+                        "source_ip": ip, 
+                        "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+
+                    for log_id in log_ids:
+                        update_log(str(log_id), "recon_alert")
+                    activate_alert(alert_id, message, context, "check_recon_activity")
 
 
 def check_exploitation_attempts(logs):
     """
-    Detecta intentos de explotación en función de los logs de autenticación.
-    Umbral: Más de 3 intentos de explotación en un intervalo de 5 minutos.
-    
+    Detecta intentos de explotación de vulnerabilidades en software o hardware.
     Args:
         logs: Logs extraídos de Elasticsearch
+        es: Instancia de conexión a Elasticsearch
     """
+    # Seguimiento de intentos de explotación por IP
+    exploitation_tracker = defaultdict(list)
+
+    # Definir palabras clave que podrían indicar un intento de explotación
+    exploitation_keywords = [
+        "exploit", "attempt", "vulnerability", "exploiting", "exploit attempt", 
+        "buffer overflow", "remote code execution", "RCE", "payload", "zero-day", 
+        "attempted compromise", "exploit attempt"
+    ]
+    
     for log in logs:
+        log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
         src_ip = log["_source"].get("src_ip")
         msg = log["_source"].get("msg", "")
+        exploitation_alert = log["_source"].get("exploitation_alert", 0)  # Verificar si ya tiene la alerta
 
-        # Filtramos los logs que contienen intentos de explotación
-        if "exploit attempt" in msg.lower():  # Este texto depende de cómo se logean los intentos de explotación
+        # Verificar si el mensaje de log contiene alguna palabra clave de explotación y si no tiene la alerta
+        if any(keyword.lower() in msg.lower() for keyword in exploitation_keywords) and exploitation_alert == 0:
             log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-            event_tracker[src_ip].append(log_time)
+            exploitation_tracker[src_ip].append(log_time)
 
-    # Limpiar entradas antiguas para evitar acumular intentos fuera del intervalo
-    for ip, timestamps in event_tracker.items():
-        clean_old_entries(ip, TIME_RELATION_THRESHOLD)
+    for ip, timestamps in exploitation_tracker.items():
+        if len(timestamps) >= 3:  # Al menos 3 intentos
+            # Ordenamos los intentos por timestamp
+            timestamps.sort()
 
-        # Verificar si el número de intentos supera el umbral
-        if len(timestamps) > BRUTE_FORCE_THRESHOLD:
-            alert_id = f"exploitation_attempt_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            message = f"Intentos de explotación detectados desde la IP {ip}. Más de {BRUTE_FORCE_THRESHOLD} intentos fallidos en los últimos 5 minutos."
-            context = {
-                "log_ids": [log["_id"] for log in logs],  # Contexto con los IDs de los logs relevantes
-                "source_ip": ip,
-                "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-            activate_alert(alert_id, message, context, "check_exploitation_attempts")
+            # Recorremos los intentos y validamos si hay entre 3 intentos en un rango de 5 minutos
+            for i in range(len(timestamps) - 2):  # Al menos 3 intentos
+                time_window_start = timestamps[i]  # El primer timestamp del rango
+                time_window_end = time_window_start + timedelta(minutes=5)  # Rango de 5 minutos
+                
+                # Contamos cuántos logs están dentro del rango de 5 minutos
+                count_in_time_window = sum(
+                    1 for timestamp in timestamps[i:i+3]  # Revisa los siguientes 3 logs
+                    if time_window_start <= timestamp <= time_window_end
+                )
+
+                if count_in_time_window >= 3:
+                    alert_id = f"exploitation_attempt_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    message = f"Posible intento de explotación detectado desde la IP {ip}. {len(timestamps)} intentos de explotación en los últimos 5 minutos."
+    
+                    log_ids = [log["_id"] for log in logs]
+                    context = {
+                        "log_ids": log_ids, 
+                        "source_ip": ip, 
+                        "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    }
+
+                    for log_id in log_ids:
+                        update_log(str(log_id), "exploitation_alert")  # Actualizamos el log para marcarlo como procesado
+                    activate_alert(alert_id, message, context, "check_exploitation_attempts")
 
 
 def check_unauthorized_access(logs):

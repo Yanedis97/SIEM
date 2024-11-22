@@ -80,9 +80,9 @@ RULES_CONFIG = {
     },
     "system_errors": {
         "function": rules.check_system_errors,
-        "devices": ["os_server"], 
+        "devices": ["os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log"], 
         "log_size": 1000,
-        "time_window": None  # En tiempo real
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "snort_alert": {
         "function": rules.check_snort_alert,
@@ -94,25 +94,25 @@ RULES_CONFIG = {
         "function": rules.check_time_related_events,
         "devices": ["any_device"],
         "log_size": 1000,
-        "time_window": "now-5m"
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "apt": {
         "function": rules.check_apt,
         "devices": ["critical_system", "network"],
-        "log_size": 20,
-        "time_window": "now-30m"
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "recon_activity": {
         "function": rules.check_recon_activity,
         "devices": ["router", "switch"],
-        "log_size": 5,
-        "time_window": "now-3m"
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "exploitation_attempts": {
         "function": rules.check_exploitation_attempts,
         "devices": ["server", "network_device"],
-        "log_size": 3,
-        "time_window": "now-5m"
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "unauthorized_access": {
         "function": rules.check_unauthorized_access,
