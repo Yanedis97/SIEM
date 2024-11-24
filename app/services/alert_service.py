@@ -102,7 +102,7 @@ def get_alerts_by_date(db: Session):
         )
 
         # Procesar resultados en una lista de dict
-        results = [{"date": result.date.isoformat(), "count": result.count} for result in alerts_by_date_query]
+        results = [{"date": result.date, "count": result.count} for result in alerts_by_date_query]
 
         return results
     except Exception as e:

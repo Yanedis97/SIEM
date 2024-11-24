@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from utils import elasticsearch
 
 es = elasticsearch.connect_elasticsearch()
@@ -37,11 +38,11 @@ def get_logs_chart_data():
         result = es.search(
             index="logs",
             body={
-                "size": 0,
+                "size": 0,  # No necesitamos los documentos, solo las agregaciones
                 "aggs": {
                     "logs_by_date": {
                         "date_histogram": {
-                            "field": "timestamp",
+                            "field": "timestamp",  # Asegúrate de que el campo 'timestamp' existe
                             "calendar_interval": "day",  # Agrupar por día
                             "format": "yyyy-MM-dd"  # Formato de salida para la fecha
                         }
@@ -50,8 +51,14 @@ def get_logs_chart_data():
             }
         )
 
+        # Verificar si la respuesta contiene la agregación esperada
+        if "aggregations" not in result or "logs_by_date" not in result["aggregations"]:
+            raise HTTPException(status_code=400, detail="Error en la agregación de Elasticsearch.")
+
         # Extraer datos de la agregación
         buckets = result["aggregations"]["logs_by_date"]["buckets"]
         return [{"date": bucket["key_as_string"], "count": bucket["doc_count"]} for bucket in buckets]
+    
     except Exception as e:
-        raise e
+        # Rellenar el detalle del error en caso de excepción
+        raise HTTPException(status_code=500, detail=f"Error al obtener datos de Elasticsearch: {str(e)}")

@@ -49,7 +49,7 @@ class AlertsRequest(BaseModel):
     severity: Optional[str] = None 
 
 # Endpoint para obtener todas las alertas
-@router.get("/all")
+@router.post("/all")
 def get_all_alerts(
     request: AlertsRequest,
     db: Session = Depends(get_db)
