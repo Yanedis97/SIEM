@@ -38,11 +38,16 @@ def get_logs_chart_data():
         result = es.search(
             index="logs",
             body={
+                "query": {
+                    "exists": {
+                        "field": "timestamp"
+                    }
+                },
                 "size": 0,  # No necesitamos los documentos, solo las agregaciones
                 "aggs": {
                     "logs_by_date": {
                         "date_histogram": {
-                            "field": "timestamp",  # Asegúrate de que el campo 'timestamp' existe
+                            "field": "timestamp",
                             "calendar_interval": "day",  # Agrupar por día
                             "format": "yyyy-MM-dd"  # Formato de salida para la fecha
                         }
