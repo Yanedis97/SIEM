@@ -26,3 +26,32 @@ def update_log(log_id, key_name):
             }
         }
     )
+
+
+def get_logs_chart_data():
+    """
+    Servicio para obtener los datos necesarios para una gráfica de logs agrupados por fecha.
+    """
+    try:
+        # Query de Elasticsearch con agregación por fecha
+        result = es.search(
+            index="logs",
+            body={
+                "size": 0,
+                "aggs": {
+                    "logs_by_date": {
+                        "date_histogram": {
+                            "field": "timestamp",
+                            "calendar_interval": "day",  # Agrupar por día
+                            "format": "yyyy-MM-dd"  # Formato de salida para la fecha
+                        }
+                    }
+                }
+            }
+        )
+
+        # Extraer datos de la agregación
+        buckets = result["aggregations"]["logs_by_date"]["buckets"]
+        return [{"date": bucket["key_as_string"], "count": bucket["doc_count"]} for bucket in buckets]
+    except Exception as e:
+        raise e

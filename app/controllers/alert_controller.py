@@ -1,12 +1,13 @@
-from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi import APIRouter, HTTPException, Depends
+from typing import Optional
 from pydantic import BaseModel
 from app.services import alert_service
 from sqlalchemy.orm import Session
 from database.db_connection import get_db
 import math
-from openpyxl import Workbook
+import csv
 from fastapi.responses import StreamingResponse
-from io import BytesIO
+from io import StringIO
 
 router = APIRouter()
 
@@ -41,15 +42,24 @@ class GetActiveAlertsResponse(BaseModel):
 class UpdateAlertRequest(BaseModel):
     status: int
 
+class AlertsRequest(BaseModel):
+    page: int = 1
+    size: int = 10
+    alert_type: Optional[int] = None 
+    severity: Optional[str] = None 
+
 # Endpoint para obtener todas las alertas
 @router.get("/all")
 def get_all_alerts(
-    page: int = Query(1, ge=1),
-    size: int = Query(10, ge=10),
+    request: AlertsRequest,
     db: Session = Depends(get_db)
-):
+    ):
+    
     try:
-        alerts, total_alerts = alert_service.get_all_alerts(db=db, page=page, size=size)
+        size = request.size
+        page = request.page
+
+        alerts, total_alerts = alert_service.get_all_alerts(request, db=db)
         if len(alerts) == 0:
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
@@ -61,7 +71,7 @@ def get_all_alerts(
                 message=alert.message,
                 source_ip=alert.source_ip,
                 dest_ip=alert.dest_ip,
-                severity=alert.severity,
+                severity= "Peligro" if alert.severity == 1 else "Advertencia",
                 category={"name":alert.name, "description":alert.description},
                 context=alert.context,
                 status=alert.status,
@@ -118,6 +128,34 @@ def get_active_alerts(
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/types")
+def get_alerts_types(
+    db: Session = Depends(get_db)
+    ):
+    
+    try:
+        alerts_types = alert_service.get_alerts_types(db=db)
+        if len(alerts_types) == 0:
+            raise HTTPException(status_code=404, detail="No se encontraron datos.")
+        
+        alerts_data = [
+            GetActiveAlertsResponse(
+                id=alert.id,
+                code=alert.code,
+                name=alert.name,
+                severity="Peligro" if alert.severity == 1 else "Advertencia",
+                description=alert.description
+            ) for alert in alerts_types
+        ]
+
+        return {
+            "detail": "Tipos de alertas obtenidas exitosamente",
+            "data": alerts_data
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Endpoint para actualizar el estado de una alerta
 @router.put("/update-status/{alert_id}")
@@ -154,18 +192,15 @@ def download_alerts(db: Session = Depends(get_db)):
         alerts, _  = alert_service.get_all_alerts(db=db, page=1, size=1000)
         
         # Crear el archivo Excel en memoria
-        output = BytesIO()
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Alerts"
+        output = StringIO()
+        writer = csv.writer(output)
 
         # Encabezados
         headers = ["ID", "Second ID", "Log IDs", "Message", "Source IP", "Dest IP", "Severity", "Context", "Category", "Status", "Created At"]
-        sheet.append(headers)
 
         # Agregar los datos de las alertas
         for alert in alerts:
-            sheet.append([
+            writer.writerow([
                 alert.id,
                 alert.second_id,
                 alert.log_ids,
@@ -180,15 +215,54 @@ def download_alerts(db: Session = Depends(get_db)):
             ])
 
         # Guardar el archivo Excel en el buffer de memoria
-        workbook.save(output)
         output.seek(0)
 
         # Preparar la respuesta con el archivo Excel
         headers = {
-            "Content-Disposition": "attachment; filename=alerts_list.xlsx",
-            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "Content-Disposition": "attachment; filename=alerts_list.csv",
+            "Content-Type": "text/csv"
         }
         return StreamingResponse(output, headers=headers)
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/by-date")
+def alerts_by_date(
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener alertas agrupadas por fecha en formato listo para gráficos.
+    """
+    try:
+        data = alert_service.get_alerts_by_date(db)
+        if not data:
+            raise HTTPException(status_code=404, detail="No se encontraron alertas para graficar.")
+        
+        return {
+            "detail": "Datos obtenidos exitosamente",
+            "data": data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+
+@router.get("/by-category")
+def alerts_by_category(
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint para obtener alertas agrupadas por categoría en formato listo para gráficos.
+    """
+    try:
+        data = alert_service.get_alerts_by_category(db)
+        if not data:
+            raise HTTPException(status_code=404, detail="No se encontraron alertas para graficar.")
+        
+        return {
+            "detail": "Datos obtenidos exitosamente",
+            "data": data
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
