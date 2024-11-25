@@ -38,6 +38,13 @@ class GetActiveAlertsResponse(BaseModel):
     status: int
     created_at: str
 
+class GetAlertsTypesResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+    severity: str
+    description: str
+
 # Modelo para actualizar el estado de una alerta
 class UpdateAlertRequest(BaseModel):
     status: int
@@ -140,7 +147,7 @@ def get_alerts_types(
             raise HTTPException(status_code=404, detail="No se encontraron datos.")
         
         alerts_data = [
-            GetActiveAlertsResponse(
+            GetAlertsTypesResponse(
                 id=alert.id,
                 code=alert.code,
                 name=alert.name,

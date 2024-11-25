@@ -34,29 +34,33 @@ def get_logs_chart_data():
     Servicio para obtener los datos necesarios para una gráfica de logs agrupados por fecha.
     """
     try:
-        # Query de Elasticsearch con agregación por fecha
+        # Query de Elasticsearch con validación de rango de fechas
         result = es.search(
             index="logs",
             body={
                 "query": {
-                    "exists": {
-                        "field": "timestamp"
+                    "range": {
+                        "timestamp": {
+                            "gte": "now-30d/d",  # Últimos 30 días
+                            "lte": "now/d",
+                            "format": "yyyy-MM-dd"
+                        }
                     }
                 },
-                "size": 0,  # No necesitamos los documentos, solo las agregaciones
+                "size": 0,
                 "aggs": {
                     "logs_by_date": {
                         "date_histogram": {
                             "field": "timestamp",
-                            "calendar_interval": "day",  # Agrupar por día
-                            "format": "yyyy-MM-dd"  # Formato de salida para la fecha
+                            "calendar_interval": "day",
+                            "format": "yyyy-MM-dd"
                         }
                     }
                 }
             }
         )
 
-        # Verificar si la respuesta contiene la agregación esperada
+        # Validación de datos en las agregaciones
         if "aggregations" not in result or "logs_by_date" not in result["aggregations"]:
             raise HTTPException(status_code=400, detail="Error en la agregación de Elasticsearch.")
 
