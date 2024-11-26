@@ -22,13 +22,26 @@ class LogNormalizer:
         self.elasticsearch = es
         self.patterns = []
         self.processed_lines = {}  # Diccionario para guardar el progreso de cada archivo
+        # self.incomplete_log = {}
 
     def add_pattern(self, pattern, log_type):
         self.patterns.append((pattern, log_type))
 
     def normalize_line(self, line):
+        # Si ya estamos en un log multilinea (incompleto), lo añadimos
+        # if not self.incomplete_log:
+        #     self.incomplete_log['msg'] += "\n" + line.strip()
+        #     if self.is_end_of_multiline_log(line):
+        #         log_data = self.incomplete_log
+        #         self.incomplete_log = {}  # Restablecer después de completar el log
+        #         log_data['type'] = 'server_windows'  # El tipo de log específico para Windows
+        #         return log_data
+        #     return None
+
+        # Revisar los patrones para logs de una sola línea
         for pattern, log_type in self.patterns:
             match = re.match(pattern, line)
+            print(">>>", match)
             if match:
                 log_data = match.groupdict()
                 log_data['type'] = log_type
@@ -44,8 +57,6 @@ class LogNormalizer:
                     except ValueError:
                         try:
                             timestamp_str = log_data['timestamp']
-                            
-                            # Agregar el año actual si no está presente
                             current_year = datetime.now().year
                             timestamp_with_year = f"{current_year} {timestamp_str}"
 
@@ -59,6 +70,11 @@ class LogNormalizer:
         # Logs no reconocidos
         return {"raw_log": line, "type": "unrecognized", "msg": line.strip()}
 
+    def is_end_of_multiline_log(self, line):
+        # Aquí definimos un patrón para identificar el final del log multilinea
+        # En el caso de los logs de Windows, podría ser cuando aparece un nuevo timestamp al inicio de la línea
+        return bool(re.match(r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}', line))
+    
     def save_logs_to_elasticsearch(self, logs):
         for log in logs:
             if 'timestamp' not in log or log['timestamp'] == "Desconocido":
@@ -126,6 +142,42 @@ def start_monitoring(log_directory, es):
     normalizer.add_pattern(
         r'(?P<timestamp>\w{3} \d{1,2} \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<service>\S+)\[(?P<pid>\d+)\]: (?P<msg>.+?)(?: from (?P<src_ip>\d+\.\d+\.\d+\.\d+))?(?: port \d+)?(?: ssh2)?',
         'server_linux'
+    )
+
+    normalizer.add_pattern(
+        r'(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) AUDIT_FAILURE (?P<event_id>\d+) (?P<msg>.+?)\n'
+        r'Sujeto:\s+Id\. de seguridad:\s+(?P<security_id>[\S]+)\n'
+        r'Nombre de cuenta:\s+(?P<account_name>[\S]+)\n'
+        r'Dominio de cuenta:\s+(?P<domain_name>[\S]+)\n'
+        r'Id\. de inicio de sesiÃ³n:\s+(?P<session_id>[\S]+)\n'
+        r'Tipo de inicio de sesiÃ³n:\s+(?P<session_type>\d+)\n'
+        r'Cuenta con error de inicio de sesiÃ³n:\s+Id\. de seguridad:\s+(?P<error_security_id>[\S]+)\n'
+        r'Nombre de cuenta:\s+(?P<error_account_name>[\S]+)\n'
+        r'Dominio de cuenta:\s+(?P<error_domain_name>[\S]+)\n'
+        r'InformaciÃ³n de error:\s+Motivo del error:\s+(?P<error_message>[\S\s]+)\n'
+        r'Estado:\s+(?P<error_state>[\S]+)\n'
+        r'Subestado:\s+(?P<error_substatus>[\S]+)\n'
+        r'InformaciÃ³n de proceso:\s+Id\. de proceso del autor de la llamada:\s+(?P<process_id>[\S]+)\n'
+        r'Nombre de proceso del autor de la llamada:\s+(?P<process_name>[\S\s]+)\n'
+        r'InformaciÃ³n de red:\s+Nombre de estaciÃ³n de trabajo:\s+(?P<workstation_name>[\S]+)\n'
+        r'DirecciÃ³n de red de origen:\s+(?P<src_ip>[\S]+)\n'
+        r'Puerto de origen:\s+(?P<src_port>[\S]+)\n'
+        r'InformaciÃ³n de autenticaciÃ³n detallada:\s+Proceso de inicio de sesiÃ³n:\s+(?P<auth_process>[\S]+)\n'
+        r'Paquete de autenticaciÃ³n:\s+(?P<auth_package>[\S]+)\n'
+        r'Servicios transitados:\s+(?P<transit_services>[\S]+)\n'
+        r'Nombre de paquete \(solo NTLM\):\s+(?P<ntlm_package>[\S]+)\n'
+        r'Longitud de clave:\s+(?P<key_length>\d+)',
+        'server_windows'
+    )
+
+    normalizer.add_pattern(
+        r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+):\s*\[\s*(?P<kernel_timestamp>[\d.]+)\]\s*(?P<msg>.+)",
+        'linux_log'
+    )
+
+    normalizer.add_pattern(
+       r'<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+):\s*(?P<user>\w+)\s*:\s*TTY=(?P<tty>[\w/]+)\s*;\s*PWD=(?P<pwd>[\w/]+)\s*;\s*USER=(?P<target_user>\w+)\s*;\s*COMMAND=(?P<command>.+)',
+        'linux_log'
     )
 
 

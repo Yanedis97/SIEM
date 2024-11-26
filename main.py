@@ -62,25 +62,25 @@ last_timestamp = "now-1d"
 RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
-        "devices": ["server_linux","windows_event","linux_log"],
+        "devices": ["server_linux","windows_event","linux_log","server_windows"],
         "log_size": 1000,
         "time_window": (datetime.now() - timedelta(minutes=10)).isoformat()
     },
     "privilege_changes": {
         "function": rules.check_privilege_change,
-        "devices": ["server_linux","windows_event","linux_log"],
+        "devices": ["server_linux","windows_event","linux_log","server_windows"],
         "log_size": 1000,
         "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "anomalous_traffic": {
         "function": rules.check_suspicious_traffic,
-        "devices": ["firewall", "router", "switch", "server_linux"],
+        "devices": ["firewall", "router", "switch", "server_linux","server_windows"],
         "log_size": 1000,
         "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "system_errors": {
         "function": rules.check_system_errors,
-        "devices": ["os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log"], 
+        "devices": ["server_windows","os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log"], 
         "log_size": 1000,
         "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
@@ -92,7 +92,7 @@ RULES_CONFIG = {
     },
     "time_related_events": {
         "function": rules.check_time_related_events,
-        "devices": ["any_device"],
+        "devices": ["server_windows","os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log", "router", "switch"],
         "log_size": 1000,
         "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },

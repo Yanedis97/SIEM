@@ -103,6 +103,21 @@ def check_brute_force(logs):
         logs: Logs extraídos de Elasticsearch
         es_client: Cliente Elasticsearch
     """
+    failed_patterns = [
+        # Inglés
+        "authentication failure",  # Intentos fallidos de autenticación
+        "failed password",  # Contraseña fallida
+        "incorrect password",  # Contraseña incorrecta
+        "failed to authenticate",  # Fallo en la autenticación
+        "login failure",  # Fallo de inicio de sesión
+
+        # Español
+        "fallo de autenticación",  # Intentos fallidos de autenticación
+        "contraseña incorrecta",  # Contraseña incorrecta
+        "error de inicio de sesión",  # Error de inicio de sesión
+        "usuario desconocido o contraseña incorrecta"  # Usuario o contraseña incorrecta
+    ]
+
     for log in logs:
         log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
@@ -110,7 +125,8 @@ def check_brute_force(logs):
         msg = log["_source"].get("msg", "")
         auth_alert = log["_source"].get("auth_alert", 0)
         
-        if "authentication failure" in msg.lower() or "failed password" in msg.lower():  
+        #if "authentication failure" in msg.lower() or "failed password" in msg.lower() or "logon failure" in msg.lower():  
+        if any(pattern.lower() in msg.lower() for pattern in failed_patterns):
             if auth_alert == 0:
                 log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
                 login_tracker[src_ip].append(log_time, log_id)
@@ -156,19 +172,21 @@ def check_privilege_change(logs):
     Args:
         logs: Logs extraídos de Elasticsearch.
     """
+    count = 0
     for log in logs:
         timestamp = log["_source"].get("timestamp")
         msg = log["_source"].get("msg", "")
         has_alert = log["_source"].get("has_alert", 0)
-        
-        if "privilege change" in msg.lower():
+        program = log["_source"].get("program", "")
+        if program == "sudo":
+            count += 1
+        if "privilege change" in msg.lower() or count >= 3:
             if has_alert == 0:
                 try:
-                    log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-                except ValueError:
+                    log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+                except ValueError as e:
                     continue 
-                
-                alert_id = f"privilege_change_{log['_id']}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                alert_id = f"privilege_change_{log['_id']}{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 message = f"Cambio de privilegio detectado: {msg}. Log ID: {log['_id']}"
                 context = {
                     "log_ids": [log["_id"]],
@@ -176,8 +194,9 @@ def check_privilege_change(logs):
                     "msg": msg,
                     "log_time": log_time.strftime("%Y-%m-%d %H:%M:%S")
                 }
-                update_log(str(context.get("log_ids","")), "has_alert")
+                update_log(str(log["_id"]), "has_alert")
                 activate_alert(alert_id, message, context, "check_privilege_change")
+                count = 0
 
 
 def check_suspicious_traffic(logs):
@@ -242,6 +261,7 @@ def check_system_errors(logs):
         r".*(The trust relationship between this workstation and the primary domain failed|La relación de confianza entre esta estación de trabajo y el dominio primario falló).*",
         
         # Linux Errors (English and Spanish)
+        r".*(Can't open blockdev|No se puede abrir el dispositivo de bloque).*",
         r".*(kernel panic|pánico del kernel).*",
         r".*(critical error|error crítico).*",
         r".*(Out of memory|Fuera de memoria).*",
@@ -353,7 +373,7 @@ def check_time_related_events(logs):
         src_ip = log["_source"].get("src_ip")
 
         if "time_related_alert" not in log["_source"] or log["_source"].get("time_related_alert", 0) == 0:
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
 
             # Si el evento está fuera del horario laboral (7:00 am - 6:00 pm)
             if log_time.time() < datetime.strptime("07:00", "%H:%M").time() or log_time.time() > datetime.strptime("18:00", "%H:%M").time():
