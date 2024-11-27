@@ -53,7 +53,7 @@ class AlertsRequest(BaseModel):
     page: int = 1
     size: int = 10
     alert_type: Optional[int] = None 
-    severity: Optional[str] = None 
+    severity: Optional[int] = None 
 
 # Endpoint para obtener todas las alertas
 @router.post("/all")
@@ -121,7 +121,7 @@ def get_active_alerts(
                 message=alert.message,
                 source_ip=alert.source_ip if alert.source_ip else "Desconocido",
                 dest_ip=alert.dest_ip if alert.dest_ip else "Desconocido",
-                severity=alert.severity,
+                severity="Peligro" if alert.severity == 1 else "Advertencia",
                 context=alert.context,
                 status=alert.status,
                 created_at=alert.created_at.isoformat()

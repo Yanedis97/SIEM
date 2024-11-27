@@ -69,7 +69,24 @@ def download_alerts(db: Session):
 # Obtener alertas activas con paginación
 def get_active_alerts(db: Session):
     try:
-        active_alerts = db.query(Alerts).filter(Alerts.status == 1).order_by(Alerts.created_at.desc()).all()
+        active_alerts = db.query(
+                            Alerts.id,
+                            Alerts.second_id,
+                            Alerts.log_ids,
+                            Alerts.message,
+                            Alerts.source_ip,
+                            Alerts.dest_ip,
+                            AlertsCategory.severity,
+                            Alerts.context,
+                            Alerts.status,
+                            Alerts.created_at
+                        ).join(
+                            AlertsCategory, 
+                            Alerts.alert_category == AlertsCategory.id
+                        ).filter(
+                            Alerts.status == 1               
+                        ).order_by(
+                            Alerts.created_at.desc()).all()
         
         return active_alerts
     except Exception as e:
