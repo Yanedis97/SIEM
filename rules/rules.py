@@ -144,23 +144,22 @@ def check_brute_force(logs):
                 time_window_end = time_window_start + timedelta(minutes=5)  # Rango de 5 minutos
                 
                 # Contamos cuántos logs están dentro del rango de 5 minutos
-                count_in_time_window = sum(
-                    1 for timestamp, _ in timestamps_and_ids[i:i+3]  # Revisa los siguientes 3 logs
-                    if time_window_start <= timestamp <= time_window_end
-                )
+                logs_in_window = [
+                    log_id for log_time, log_id in timestamps_and_ids[i:i+BRUTE_FORCE_THRESHOLD]
+                    if time_window_start <= log_time <= time_window_end
+                ]
 
-                if count_in_time_window >= 3:
+                if len(logs_in_window) >= BRUTE_FORCE_THRESHOLD:
                     alert_id = f"brute_force_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                     message = f"Posible ataque de fuerza bruta detectado desde la IP {ip}. {len(timestamps_and_ids)} intentos fallidos en los últimos {TIME_RELATION_THRESHOLD} minutos."
     
-                    log_ids = [log["_id"] for log in logs]
                     context = {
-                        "log_ids": log_ids, 
+                        "log_ids": logs_in_window, 
                         "source_ip": ip, 
                         "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
 
-                    for log_id in log_ids:
+                    for log_id in logs_in_window:
                         update_log(str(log_id), "auth_alert")
                     activate_alert(alert_id, message, context, "check_brute_force")
                     break
@@ -172,15 +171,13 @@ def check_privilege_change(logs):
     Args:
         logs: Logs extraídos de Elasticsearch.
     """
-    count = 0
     for log in logs:
         timestamp = log["_source"].get("timestamp")
         msg = log["_source"].get("msg", "")
         has_alert = log["_source"].get("has_alert", 0)
         program = log["_source"].get("program", "")
-        if program == "sudo":
-            count += 1
-        if "privilege change" in msg.lower() or count >= 3:
+        
+        if "privilege change" in msg.lower() or program == "sudo":
             if has_alert == 0:
                 try:
                     log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
@@ -196,7 +193,6 @@ def check_privilege_change(logs):
                 }
                 update_log(str(log["_id"]), "has_alert")
                 activate_alert(alert_id, message, context, "check_privilege_change")
-                count = 0
 
 
 def check_suspicious_traffic(logs):
@@ -334,7 +330,7 @@ def process_snort_log(log_entry):
             alert_type = "Intento de Inyección SQL"
 
         timestamp_str = log_entry['_source'].get('timestamp')
-        if timestamp_str:
+        if timestamp_str and alert_type != "":
             try:
                 timestamp = datetime.strptime(timestamp_str, "%Y-%m-%dT%H:%M:%S")
                 alert_id = f"snort_alert_{sid}_{source_ip}_{dest_ip}_{timestamp.strftime('%Y%m%d%H%M%S')}"
@@ -371,40 +367,40 @@ def check_time_related_events(logs):
         log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
         src_ip = log["_source"].get("src_ip")
+        time_related_alert = log["_source"].get("time_related_alert", 0)
 
-        if "time_related_alert" not in log["_source"] or log["_source"].get("time_related_alert", 0) == 0:
+        if time_related_alert == 0:
             log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
 
             # Si el evento está fuera del horario laboral (7:00 am - 6:00 pm)
             if log_time.time() < datetime.strptime("07:00", "%H:%M").time() or log_time.time() > datetime.strptime("18:00", "%H:%M").time():
-                event_tracker[src_ip].append(log_time)
+                event_tracker[src_ip].append(log_time, log_id)
 
     for ip, timestamps in event_tracker.items():
         if len(timestamps) >= 5:
-            timestamps.sort()
+            timestamps.sort(key=lambda x: x[0])
 
             # Recorremos los eventos y validamos si hay más de 5 en el rango de 5 minutos
             for i in range(len(timestamps) - 4):  # -4 porque necesitamos al menos 5 eventos
-                time_window_start = timestamps[i]  # El primer timestamp del rango
+                time_window_start = timestamps[i][0]  # El primer timestamp del rango
                 time_window_end = time_window_start + EVENT_TIME_WINDOW  # Rango de 5 minutos
                 
-                count_in_time_window = sum(
-                    1 for timestamp in timestamps[i:i+5]  # Revisa los siguientes 5 logs
-                    if time_window_start <= timestamp <= time_window_end
-                )
+                logs_in_window = [
+                    log_id for log_time, log_id in timestamps[i:i+5]
+                    if time_window_start <= log_time <= time_window_end
+                ]
 
-                if count_in_time_window >= 5:
+                if len(logs_in_window) >= 5:
                     alert_id = f"time_related_events_{ip}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                     message = f"Posible actividad sospechosa: más de 5 eventos desde la IP {ip} fuera del horario laboral o en un corto intervalo de tiempo."
                     
-                    log_ids = [log["_id"] for log in logs]
                     context = {
-                        "log_ids": log_ids, 
+                        "log_ids": logs_in_window, 
                         "source_ip": ip, 
                         "event_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     }
 
-                    for log_id in log_ids:
+                    for log_id in logs_in_window:
                         update_log(str(log_id), "time_related_alert")
                     
                     activate_alert(alert_id, message, context, "check_time_related_events")

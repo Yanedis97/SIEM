@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.models.alerts import Alerts
 from app.models.alerts_categories import AlertsCategory
 
-def build_alerts_query(request, db: Session):
+def build_alerts_query(db: Session, request = None):
     """Construir la consulta de alertas con los filtros proporcionados"""
     query = db.query(
             Alerts.id,
@@ -22,19 +22,20 @@ def build_alerts_query(request, db: Session):
             AlertsCategory, Alerts.alert_category == AlertsCategory.id
         )
 
-    # Aplicar filtros dinámicos a la consulta
-    if request.alert_type:
-        query = query.filter(AlertsCategory.id == request.alert_type)
+    if request:
+        # Aplicar filtros dinámicos a la consulta
+        if request.alert_type:
+            query = query.filter(AlertsCategory.id == request.alert_type)
 
-    if request.severity:
-        query = query.filter(AlertsCategory.severity == request.severity)
+        if request.severity:
+            query = query.filter(AlertsCategory.severity == request.severity)
 
     return query
 
 def get_all_alerts(request, db: Session):
     try:
         # Construir la consulta base con filtros
-        alerts_query = build_alerts_query(request, db)
+        alerts_query = build_alerts_query(db, request)
 
         # Paginación
         start_from = (request.page - 1) * request.size
@@ -44,10 +45,23 @@ def get_all_alerts(request, db: Session):
                              .all()
 
         # Obtener el conteo total aplicando los mismos filtros
-        total_alerts_query = build_alerts_query(request, db)
+        total_alerts_query = build_alerts_query(db, request)
         total_alerts = total_alerts_query.count()
 
         return alerts, total_alerts
+    except Exception as e:
+        raise e
+
+def download_alerts(db: Session):
+    try:
+        # Construir la consulta base con filtros
+        alerts_query = build_alerts_query(db)
+
+        # Paginación
+        alerts = alerts_query.order_by(Alerts.created_at.desc()) \
+                             .all()
+
+        return alerts
     except Exception as e:
         raise e
 

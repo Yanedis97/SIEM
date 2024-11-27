@@ -196,7 +196,7 @@ def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session 
 def download_alerts(db: Session = Depends(get_db)):
     try:
         # Obtiene todas las alertas sin paginación
-        alerts, _  = alert_service.get_all_alerts(db=db, page=1, size=1000)
+        alerts = alert_service.download_alerts(db)
         
         # Crear el archivo Excel en memoria
         output = StringIO()
