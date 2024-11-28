@@ -105,7 +105,6 @@ def check_brute_force(logs):
     """
     failed_patterns = [
         # Inglés
-        "authentication failure",  # Intentos fallidos de autenticación
         "failed password",  # Contraseña fallida
         "incorrect password",  # Contraseña incorrecta
         "failed to authenticate",  # Fallo en la autenticación
@@ -128,8 +127,8 @@ def check_brute_force(logs):
         #if "authentication failure" in msg.lower() or "failed password" in msg.lower() or "logon failure" in msg.lower():  
         if any(pattern.lower() in msg.lower() for pattern in failed_patterns):
             if auth_alert == 0:
-                log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
-                login_tracker[src_ip].append(log_time, log_id)
+                log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+                login_tracker[src_ip].append([log_time, log_id])
 
     for ip, timestamps_and_ids in login_tracker.items():
         
@@ -209,7 +208,7 @@ def check_suspicious_traffic(logs):
         
         # Solo consideramos logs de dispositivos relevantes (Firewalls, routers)
         if "firewall" in msg.lower() or "router" in msg.lower():
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             traffic_tracker[src_ip].append(log_time)
 
     # Limpiar entradas antiguas (en base a la ventana de 10 minutos)
@@ -374,7 +373,7 @@ def check_time_related_events(logs):
 
             # Si el evento está fuera del horario laboral (7:00 am - 6:00 pm)
             if log_time.time() < datetime.strptime("07:00", "%H:%M").time() or log_time.time() > datetime.strptime("18:00", "%H:%M").time():
-                event_tracker[src_ip].append(log_time, log_id)
+                event_tracker[src_ip].append([log_time, log_id])
 
     for ip, timestamps in event_tracker.items():
         if len(timestamps) >= 5:
@@ -502,7 +501,7 @@ def correlate_file_access(logs):
         user = log["_source"].get("hostname", "")
         
         try:
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
         except ValueError:
             log_time = datetime.now()
         
@@ -540,7 +539,7 @@ def correlate_command_execution(logs):
         user = log["_source"].get("user", "")
         
         try:
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
         except ValueError:
             log_time = datetime.now()
         
@@ -578,7 +577,7 @@ def correlate_access_to_multiple_systems(logs):
         user = log["_source"].get("user", "")
         
         try:
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
         except ValueError:
             log_time = datetime.now()
         
@@ -628,7 +627,7 @@ def check_recon_activity(logs):
         
         # Verificar si el mensaje de log contiene alguna palabra clave de escaneo
         if any(keyword.lower() in msg.lower() for keyword in recon_keywords) and recon_alert == 0:  
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             scan_tracker[src_ip].append(log_time)
 
     for ip, timestamps in scan_tracker.items():
@@ -689,7 +688,7 @@ def check_exploitation_attempts(logs):
 
         # Verificar si el mensaje de log contiene alguna palabra clave de explotación y si no tiene la alerta
         if any(keyword.lower() in msg.lower() for keyword in exploitation_keywords) and exploitation_alert == 0:
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             exploitation_tracker[src_ip].append(log_time)
 
     for ip, timestamps in exploitation_tracker.items():
@@ -737,7 +736,7 @@ def check_unauthorized_access(logs):
 
         # Verificar si es un intento fallido de autenticación
         if "authentication failed" in msg.lower():  # Ajusta esto según los logs específicos
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             login_tracker[src_ip].append(log_time)
 
     # Limpiar entradas antiguas
@@ -778,7 +777,7 @@ def check_malware_activity(logs):
         
         # Aquí podrías incluir más condiciones para detectar comportamientos típicos de malware
         if "file access" in msg.lower() or "suspicious connection" in msg.lower():
-            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%SZ")
+            log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
             malware_tracker[device_id].append(log_time)
 
     for device, timestamps in malware_tracker.items():

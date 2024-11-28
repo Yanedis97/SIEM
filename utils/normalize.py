@@ -145,40 +145,15 @@ def start_monitoring(log_directory, es):
     )
 
     normalizer.add_pattern(
-        r'(?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) AUDIT_FAILURE (?P<event_id>\d+) (?P<msg>.+?)\n'
-        r'Sujeto:\s+Id\. de seguridad:\s+(?P<security_id>[\S]+)\n'
-        r'Nombre de cuenta:\s+(?P<account_name>[\S]+)\n'
-        r'Dominio de cuenta:\s+(?P<domain_name>[\S]+)\n'
-        r'Id\. de inicio de sesiÃ³n:\s+(?P<session_id>[\S]+)\n'
-        r'Tipo de inicio de sesiÃ³n:\s+(?P<session_type>\d+)\n'
-        r'Cuenta con error de inicio de sesiÃ³n:\s+Id\. de seguridad:\s+(?P<error_security_id>[\S]+)\n'
-        r'Nombre de cuenta:\s+(?P<error_account_name>[\S]+)\n'
-        r'Dominio de cuenta:\s+(?P<error_domain_name>[\S]+)\n'
-        r'InformaciÃ³n de error:\s+Motivo del error:\s+(?P<error_message>[\S\s]+)\n'
-        r'Estado:\s+(?P<error_state>[\S]+)\n'
-        r'Subestado:\s+(?P<error_substatus>[\S]+)\n'
-        r'InformaciÃ³n de proceso:\s+Id\. de proceso del autor de la llamada:\s+(?P<process_id>[\S]+)\n'
-        r'Nombre de proceso del autor de la llamada:\s+(?P<process_name>[\S\s]+)\n'
-        r'InformaciÃ³n de red:\s+Nombre de estaciÃ³n de trabajo:\s+(?P<workstation_name>[\S]+)\n'
-        r'DirecciÃ³n de red de origen:\s+(?P<src_ip>[\S]+)\n'
-        r'Puerto de origen:\s+(?P<src_port>[\S]+)\n'
-        r'InformaciÃ³n de autenticaciÃ³n detallada:\s+Proceso de inicio de sesiÃ³n:\s+(?P<auth_process>[\S]+)\n'
-        r'Paquete de autenticaciÃ³n:\s+(?P<auth_package>[\S]+)\n'
-        r'Servicios transitados:\s+(?P<transit_services>[\S]+)\n'
-        r'Nombre de paquete \(solo NTLM\):\s+(?P<ntlm_package>[\S]+)\n'
-        r'Longitud de clave:\s+(?P<key_length>\d+)',
-        'server_windows'
-    )
-
-    normalizer.add_pattern(
         r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+):\s*\[\s*(?P<kernel_timestamp>[\d.]+)\]\s*(?P<msg>.+)",
         'linux_log'
     )
+    
+    normalizer.add_pattern(
+    r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<subsystem>[\w_]+)\((?P<module>[\w:]+)\):\s+(?P<msg>.+)", 'linux_log')
 
     normalizer.add_pattern(
-       r'<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+):\s*(?P<user>\w+)\s*:\s*TTY=(?P<tty>[\w/]+)\s*;\s*PWD=(?P<pwd>[\w/]+)\s*;\s*USER=(?P<target_user>\w+)\s*;\s*COMMAND=(?P<command>.+)',
-        'linux_log'
-    )
+    r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<msg>.+)","linux_log")
 
 
     event_handler = LogHandler(normalizer)
