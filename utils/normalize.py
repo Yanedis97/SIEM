@@ -126,7 +126,7 @@ def start_monitoring(log_directory, es):
     )
 
     normalizer.add_pattern(
-        r'(?P<level>\w+)\s+(?P<timestamp>\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{2}:\d{2} [ap]\. [m]+\.\w+)\s+(?P<source>[\w\s-]+)\s+(?P<event_id>\d+)\s+(?P<category>\w+)\s+"(?P<message>.+)"',
+        r'(?P<level>\w+)\s+(?P<timestamp>\d{1,2}/\d{1,2}/\d{4} \d{1,2}:\d{2}:\d{2} [ap]\. [m]+\.\w+)\s+(?P<source>[\w\s-]+)\s+(?P<event_id>\d+)\s+(?P<category>\w+)\s+"(?P<msg>.+)"',
         'windows_event'
     )
 
@@ -136,7 +136,7 @@ def start_monitoring(log_directory, es):
     )
 
     normalizer.add_pattern(
-        r'(?P<index>\d+)\s+(?P<month>\w+)\s+(?P<day>\d+)\s+(?P<time>\d{2}:\d{2}:\d{2})\s+(?P<entry_type>\w+)\s+(?P<source>[\w\s\(\)\-]+)\s+(?P<instance_id>\d+)\s+(?P<message>.+)',
+        r'(?P<index>\d+)\s+(?P<month>\w+)\s+(?P<day>\d+)\s+(?P<time>\d{2}:\d{2}:\d{2})\s+(?P<entry_type>\w+)\s+(?P<source>[\w\s\(\)\-]+)\s+(?P<instance_id>\d+)\s+(?P<msg>.+)',
         'powershell_log'
     )
 
@@ -151,10 +151,10 @@ def start_monitoring(log_directory, es):
     )
     
     normalizer.add_pattern(
-    r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<subsystem>[\w_]+)\((?P<module>[\w:]+)\):\s+(?P<msg>.+)", 'linux_log')
+        r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<subsystem>[\w_]+)\((?P<module>[\w:]+)\):\s+(?P<msg>.+)", 'linux_log')
 
     normalizer.add_pattern(
-    r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<msg>.+)","linux_log")
+        r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<msg>.+?)\s+from\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+)","linux_log")
 
 
     event_handler = LogHandler(normalizer)

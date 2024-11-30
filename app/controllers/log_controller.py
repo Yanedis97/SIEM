@@ -31,7 +31,10 @@ def logs_chart_data():
         
         return {
             "detail": "Datos obtenidos exitosamente",
-            "data": chart_data
+            "data": {
+                "logs_by_date": chart_data["logs_by_date"],
+                "total_logs": chart_data["total_logs"]
+            }
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

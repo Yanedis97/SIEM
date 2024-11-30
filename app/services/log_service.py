@@ -66,7 +66,15 @@ def get_logs_chart_data():
 
         # Extraer datos de la agregación
         buckets = result["aggregations"]["logs_by_date"]["buckets"]
-        return [{"date": bucket["key_as_string"], "count": bucket["doc_count"]} for bucket in buckets]
+        logs_by_date  =  [{"date": bucket["key_as_string"], "count": bucket["doc_count"]} for bucket in buckets]
+
+        # Query para contar el número total de logs
+        total_logs_result = es.count(index="logs")
+        total_logs = total_logs_result.get("count", 0)
+        return {
+            "logs_by_date": logs_by_date,
+            "total_logs": total_logs
+        }
     
     except Exception as e:
         # Rellenar el detalle del error en caso de excepción

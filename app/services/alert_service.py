@@ -115,7 +115,17 @@ def update_alert_status(db: Session, alert_id: int, status: int):
             return None
     except Exception as e:
         raise e
-    
+
+def get_total_alerts_count(db: Session):
+    """
+    Servicio para obtener el número total de alertas en la base de datos.
+    """
+    try:
+        total_count = db.query(func.count(Alerts.id)).scalar()
+        return total_count
+    except Exception as e:
+        raise e
+
 
 def get_alerts_by_date(db: Session):
     """
@@ -133,9 +143,12 @@ def get_alerts_by_date(db: Session):
         )
 
         # Procesar resultados en una lista de dict
-        results = [{"date": result.date, "count": result.count} for result in alerts_by_date_query]
+        alerts_by_date = [{"date": result.date, "count": result.count} for result in alerts_by_date_query]
+        
+        # Total de alertas
+        total_alerts = get_total_alerts_count(db)
 
-        return results
+        return {"alerts_by_date": alerts_by_date, "total_alerts": total_alerts}
     except Exception as e:
         raise e
     

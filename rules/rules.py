@@ -127,8 +127,9 @@ def check_brute_force(logs):
         #if "authentication failure" in msg.lower() or "failed password" in msg.lower() or "logon failure" in msg.lower():  
         if any(pattern.lower() in msg.lower() for pattern in failed_patterns):
             if auth_alert == 0:
-                log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
-                login_tracker[src_ip].append([log_time, log_id])
+                if src_ip != 'Desconocido':
+                    log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+                    login_tracker[src_ip].append([log_time, log_id])
 
     for ip, timestamps_and_ids in login_tracker.items():
         
@@ -378,7 +379,8 @@ def check_time_related_events(logs):
 
             # Si el evento está fuera del horario laboral (7:00 am - 6:00 pm)
             if log_time.time() < datetime.strptime("07:00", "%H:%M").time() or log_time.time() > datetime.strptime("18:00", "%H:%M").time():
-                event_tracker[src_ip].append([log_time, log_id])
+                if src_ip != 'Desconocido':
+                    event_tracker[src_ip].append([log_time, log_id])
 
     for ip, timestamps in event_tracker.items():
         if len(timestamps) >= 5:

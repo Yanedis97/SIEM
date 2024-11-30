@@ -244,7 +244,7 @@ def alerts_by_date(
     """
     try:
         data = alert_service.get_alerts_by_date(db)
-        if not data:
+        if not data["alerts_by_date"]:
             raise HTTPException(status_code=404, detail="No se encontraron alertas para graficar.")
         
         return {
