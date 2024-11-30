@@ -116,7 +116,7 @@ def check_brute_force(logs):
         "error de inicio de sesión",  # Error de inicio de sesión
         "usuario desconocido o contraseña incorrecta"  # Usuario o contraseña incorrecta
     ]
-
+    login_tracker = {}
     for log in logs:
         log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
@@ -362,11 +362,16 @@ def check_time_related_events(logs):
     Args:
         logs: Logs extraídos de los dispositivos generadores de logs
     """
+    event_tracker = {}
     for log in logs:
         log_id = log["_id"]
         timestamp = log["_source"].get("timestamp")
         src_ip = log["_source"].get("src_ip")
         time_related_alert = log["_source"].get("time_related_alert", 0)
+        message = log["_source"].get("msg")
+
+        if "pam" in message.lower():
+            continue
 
         if time_related_alert == 0:
             log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
@@ -403,6 +408,7 @@ def check_time_related_events(logs):
                         update_log(str(log_id), "time_related_alert")
                     
                     activate_alert(alert_id, message, context, "check_time_related_events")
+                    break
 
 #-------------------------------------------------------------------------------7-----------------------------------------------------------------------------------------------
 

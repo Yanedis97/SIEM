@@ -1,4 +1,7 @@
 from elasticsearch import Elasticsearch, AsyncElasticsearch
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def connect_elasticsearch():
     es = Elasticsearch(

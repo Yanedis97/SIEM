@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers.polling import PollingObserver
 
 
 class LogHandler(FileSystemEventHandler):
@@ -157,7 +158,7 @@ def start_monitoring(log_directory, es):
 
 
     event_handler = LogHandler(normalizer)
-    observer = Observer()
+    observer = PollingObserver()
     observer.schedule(event_handler, path=log_directory, recursive=False)
     observer.start()
     print(f"Monitoreando cambios en el directorio: {log_directory}")
