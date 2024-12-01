@@ -129,6 +129,10 @@ def check_brute_force(logs):
             if auth_alert == 0:
                 if src_ip != 'Desconocido':
                     log_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+
+                    if src_ip not in login_tracker:
+                        login_tracker[src_ip] = []
+                        
                     login_tracker[src_ip].append([log_time, log_id])
 
     for ip, timestamps_and_ids in login_tracker.items():
@@ -380,6 +384,9 @@ def check_time_related_events(logs):
             # Si el evento está fuera del horario laboral (7:00 am - 6:00 pm)
             if log_time.time() < datetime.strptime("07:00", "%H:%M").time() or log_time.time() > datetime.strptime("18:00", "%H:%M").time():
                 if src_ip != 'Desconocido':
+                    if src_ip not in event_tracker:
+                        event_tracker[src_ip] = []
+                        
                     event_tracker[src_ip].append([log_time, log_id])
 
     for ip, timestamps in event_tracker.items():

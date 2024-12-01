@@ -65,6 +65,11 @@ class LogNormalizer:
                         except ValueError as e:
                             print(f"Error al parsear timestamp: {e}, valor original: {timestamp_str}")
                             log_data['timestamp'] = "Desconocido"
+                
+                # Verificar si el log es desechable
+                if self.is_desechable_log(log_data):
+                    print(f"Log desechable ignorado: {log_data}")
+                    return None  # Ignorar este log
 
                 return log_data
 
@@ -85,6 +90,23 @@ class LogNormalizer:
             log_json = json.dumps(log)
             self.elasticsearch.index(index="logs", id=log["id"], body=log_json)
             print(">>>>Guardado: ", log_json)
+    
+    def is_desechable_log(self, log_data):
+        """
+        Determina si un log es considerado desechable, como logs de limpieza de systemd o anacron.
+        """
+        if 'program' in log_data:
+            program = log_data['program']
+            # Patrón para identificar logs de systemd y anacron, ahora buscando en el campo 'program'
+            disposable_patterns = [
+                r"systemd\[.*\]:.*Cleanup of Temporary Directories.*",
+                r".*anacron\[.*\]:.*Anacron.*"
+            ]
+            for pattern in disposable_patterns:
+                if re.match(pattern, program):
+                    return True
+        return False
+
 
     def normalize_file(self, input_file):
         # Leer el archivo desde la última posición procesada de manera segura

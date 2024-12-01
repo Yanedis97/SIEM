@@ -92,7 +92,7 @@ RULES_CONFIG = {
     },
     "time_related_events": {
         "function": rules.check_time_related_events,
-        "devices": ["server_windows","os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log", "router", "switch"],
+        "devices": ["server_windows","os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log", "router", "switch", "snort"],
         "log_size": 1000,
         "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },

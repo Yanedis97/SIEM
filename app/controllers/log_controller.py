@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException, Query
 from app.services import log_service
+from app.controllers.login_controller import get_current_user
+from fastapi import Depends
 
 router = APIRouter()
 
 # Obtener logs con paginación
 @router.get("/all")
-def get_all_logs(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
+def get_all_logs(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100), current_user: dict = Depends(get_current_user)):
     """
     Endpoint para obtener logs con paginación.
     Parámetros:
@@ -20,7 +22,7 @@ def get_all_logs(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)
     
 
 @router.get("/by-date")
-def logs_chart_data():
+def logs_chart_data(current_user: dict = Depends(get_current_user)):
     """
     Endpoint para obtener datos para un gráfico de logs agrupados por fecha.
     """

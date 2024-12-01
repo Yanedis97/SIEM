@@ -8,6 +8,8 @@ import math
 import csv
 from fastapi.responses import StreamingResponse
 from io import StringIO
+from app.controllers.login_controller import get_current_user
+from fastapi import Depends
 
 router = APIRouter()
 
@@ -59,7 +61,8 @@ class AlertsRequest(BaseModel):
 @router.post("/all")
 def get_all_alerts(
     request: AlertsRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
     ):
     
     try:
@@ -105,7 +108,8 @@ def get_all_alerts(
 # Endpoint para obtener alertas activas
 @router.get("/active")
 def get_active_alerts(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
     ):
     
     try:
@@ -138,7 +142,8 @@ def get_active_alerts(
     
 @router.get("/types")
 def get_alerts_types(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
     ):
     
     try:
@@ -166,7 +171,7 @@ def get_alerts_types(
 
 # Endpoint para actualizar el estado de una alerta
 @router.put("/update-status/{alert_id}")
-def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session = Depends(get_db)):
+def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     try:
         updated_alert = alert_service.update_alert_status(db=db, alert_id=alert_id, status=request.status)
         if not updated_alert:
@@ -193,7 +198,7 @@ def update_alert_status(alert_id: int, request: UpdateAlertRequest, db: Session 
     
 
 @router.get("/download-alerts")
-def download_alerts(db: Session = Depends(get_db)):
+def download_alerts(db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     try:
         # Obtiene todas las alertas sin paginación
         alerts = alert_service.download_alerts(db)
@@ -237,7 +242,8 @@ def download_alerts(db: Session = Depends(get_db)):
 
 @router.get("/by-date")
 def alerts_by_date(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Endpoint para obtener alertas agrupadas por fecha en formato listo para gráficos.
@@ -257,7 +263,8 @@ def alerts_by_date(
 
 @router.get("/by-category")
 def alerts_by_category(
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Endpoint para obtener alertas agrupadas por categoría en formato listo para gráficos.

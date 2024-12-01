@@ -1,14 +1,23 @@
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException, Depends, Query, status
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List
 from sqlalchemy.orm import Session
 from app.services.login_service import create_user, authenticate_user, get_all_users_service
 from database.db_connection import get_db
 from sqlalchemy.exc import IntegrityError
 import math
+from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from fastapi import Depends, HTTPException
 
 router = APIRouter()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
+# Configuración para JWT
+SECRET_KEY = "admin123"  # Cambia esto por una clave segura
+ALGORITHM = "HS256"  # Algoritmo usado para firmar el token
+ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Expiración en minutos
 
 class GetUsersResponse(BaseModel):
     id: int
@@ -45,9 +54,52 @@ class LoginResponse(BaseModel):
     detail: str
     data: dict
 
+
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    payload = verify_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Token inválido o expirado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
+
+def verify_token(token: str):
+    """
+    Verifica y decodifica un token JWT.
+    Args:
+        token (str): Token JWT.
+    Returns:
+        dict: Datos decodificados del token.
+    """
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="El token ha expirado.")
+    except jwt.JWTClaimsError:
+        raise HTTPException(status_code=401, detail="Reclamos inválidos en el token.")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token inválido.")
+    
+def create_access_token(data: dict):
+    """
+    Genera un token de acceso con datos específicos.
+    Args:
+        data (dict): Datos a incluir en el token.
+    Returns:
+        str: Token JWT.
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
 # API para crear un nuevo usuario
 @router.post("/create_user", response_model=CreateUserResponse, status_code=status.HTTP_201_CREATED)
-def create_new_user(request: CreateUserRequest, db: Session = Depends(get_db)):
+def create_new_user(request: CreateUserRequest, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     try:
         # Crear el nuevo usuario
         new_user = create_user(
@@ -87,13 +139,19 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Credenciales inválidas.")
     
+    access_token = create_access_token(data={"sub": user.email})
+    
     # Devolver los datos del usuario (puedes incluir un token si usas JWT)
     return {
         "detail": "Inicio de sesion exitoso",
         "data": {
-            "id": user.id,
-            "username": user.username,
-            "role": user.role
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "role": user.role
+            }
         }
     }
 
@@ -102,7 +160,9 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
 def get_all_users(
     page: int = Query(1, ge=1),
     size: int = Query(10, ge=10), 
-    db: Session = Depends(get_db)):
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+    ):
     try:
         users, total_users = get_all_users_service(db=db, page=page, size=size)
         if len(users) == 0:
