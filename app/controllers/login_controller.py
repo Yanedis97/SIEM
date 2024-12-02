@@ -17,7 +17,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 # Configuración para JWT
 SECRET_KEY = "admin123"  # Cambia esto por una clave segura
 ALGORITHM = "HS256"  # Algoritmo usado para firmar el token
-ACCESS_TOKEN_EXPIRE_MINUTES = 30  # Expiración en minutos
+ACCESS_TOKEN_EXPIRE_MINUTES = 360  # Expiración en minutos
 
 class GetUsersResponse(BaseModel):
     id: int

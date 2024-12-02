@@ -9,37 +9,30 @@ from rules import rules
 import uvicorn
 import time
 from datetime import datetime, timedelta
+from threading import Thread
+from app.services.email_service import schedule_daily_report
+import schedule
 
 es = elasticsearch.connect_elasticsearch()
 
 # Crear instancia de FastAPI
 app = FastAPI()
 
-# Configuración de políticas CORS para permitir cualquier origen
+# Configuración de políticas CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://127.0.0.1:5000", "localhost:3000",
-                   "localhost:5173","http://127.0.0.1:5173",
-                   "http://localhost:5173", "http://localhost:5173/",
-                   "http://localhost:3000", "http://localhost:3000/"],
+    allow_origins=[
+        "http://127.0.0.1:5000",  # Si usas Flask o alguna app en este puerto
+        "http://localhost:3000",   # Puerto por defecto para React
+        "http://localhost:5173",   # Puerto por defecto para Vite
+        "http://127.0.0.1:5173",
+        "http://localhost:5173/",
+        "http://localhost:3000/",
+        "http://127.0.0.1:3000"
+    ],
     allow_credentials=True,
-    allow_methods=[
-        "GET",
-        "POST",
-        "PUT",
-        "DELETE",
-        "OPTIONS",
-    ],
-    allow_headers=[
-        "Access-Control-Allow-Headers",
-        "Origin",
-        "Accept",
-        "X-Requested-With",
-        "Content-Type",
-        "Access-Control-Request-Method",
-        "Access-Control-Request-Headers",
-        "Access-Control-Allow-Origin",
-    ],
+    allow_methods=["*"],  # Permite todos los métodos HTTP (GET, POST, PUT, DELETE, OPTIONS)
+    allow_headers=["*"],  # Permite todos los encabezados
 )
 
 # Registrar los controladores
@@ -261,11 +254,33 @@ def start_monitoring_task():
     #rules_thread.join()
 
 
+def start_email_report_task():
+    smtp_server = "smtp.gmail.com"
+    smtp_port = 587
+    sender_email = "monitoreoyalertassistema@gmail.com"
+    sender_password = "yune fiuf vmri vrcz"
+
+    # Configura el programa de envío diario de reportes
+    schedule_daily_report(
+        smtp_server=smtp_server,
+        smtp_port=smtp_port,
+        sender_email=sender_email,
+        sender_password=sender_password
+    )
+
+    # Inicia un bucle para ejecutar las tareas programadas
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
 def main():
     fastapi_thread = Thread(target=start_fastapi_server)
     fastapi_thread.start()
 
     start_monitoring_task()
+
+    email_thread = Thread(target=start_email_report_task)
+    email_thread.start()
 
     fastapi_thread.join()
 if __name__ == "__main__":

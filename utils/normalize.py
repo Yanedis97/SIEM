@@ -178,7 +178,6 @@ def start_monitoring(log_directory, es):
     normalizer.add_pattern(
         r"<(?P<priority>\d+)>\s*(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+(?P<hostname>\S+)\s+(?P<program>\w+)\[(?P<pid>\d+)\]:\s+(?P<msg>.+?)\s+from\s+(?P<src_ip>\d+\.\d+\.\d+\.\d+)","linux_log")
 
-
     event_handler = LogHandler(normalizer)
     observer = PollingObserver()
     observer.schedule(event_handler, path=log_directory, recursive=False)
