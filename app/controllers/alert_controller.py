@@ -47,6 +47,8 @@ class GetAlertsTypesResponse(BaseModel):
     severity: str
     description: str
 
+class RecommendationsRequest(BaseModel):
+    alert_id: int = 1
 # Modelo para actualizar el estado de una alerta
 class UpdateAlertRequest(BaseModel):
     status: int
@@ -271,6 +273,29 @@ def alerts_by_category(
     """
     try:
         data = alert_service.get_alerts_by_category(db)
+        if not data:
+            raise HTTPException(status_code=404, detail="No se encontraron alertas para graficar.")
+        
+        return {
+            "detail": "Datos obtenidos exitosamente",
+            "data": data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/recommendations")
+def recommendations_by_alert(
+    request: RecommendationsRequest,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    alert_id = request.alert_id
+    """
+    Endpoint para obtener las recomendaciones de una alerta en específico.
+    """
+    try:
+        data = alert_service.get_recommendations_by_alert(db, alert_id)
         if not data:
             raise HTTPException(status_code=404, detail="No se encontraron alertas para graficar.")
         

@@ -2,6 +2,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.alerts import Alerts
 from app.models.alerts_categories import AlertsCategory
+from app.models.recommendations import Recommendation
 
 def build_alerts_query(db: Session, request = None):
     """Construir la consulta de alertas con los filtros proporcionados"""
@@ -171,6 +172,35 @@ def get_alerts_by_category(db: Session):
 
         # Procesar resultados en una lista de dict
         results = [{"category": result.category, "count": result.count} for result in alerts_by_category_query]
+
+        return results
+    except Exception as e:
+        raise e
+    
+
+def get_recommendations_by_alert(db: Session, alert_id):
+    """
+    Servicio para obtener las recomendaciones de una alerta en específico.
+    """
+    try:
+        # Consulta que cuenta las alertas por categoría
+        recommendations = db.query(
+                            Recommendation.id,
+                            Recommendation.recommendation
+                        ).join(
+                            AlertsCategory, 
+                            Recommendation.category_id == AlertsCategory.id
+                        ).join(
+                            Alerts, 
+                            Alerts.alert_category == AlertsCategory.id
+                        ).filter(
+                            Alerts.id == alert_id              
+                        ).order_by(
+                            Recommendation.id.desc()
+                        ).all()
+
+        # Procesar resultados en una lista de dict
+        results = [{"id": recomen.id, "recommendation": recomen.recommendation} for recomen in recommendations]
 
         return results
     except Exception as e:

@@ -1,0 +1,46 @@
+CREATE TABLE recommendations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL,                 
+  recommendation TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (category_id) REFERENCES alerts_categories(id) ON DELETE CASCADE
+);
+
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_brute_force'), 'Aconsejar al usuario un cambio de contraseña cada cierto tiempo, es decir mínimo tres meses.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_brute_force'), 'No compartir programas administrativos o documentos a terceros.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_brute_force'), 'No compartir correos profesionales.');
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_privilege_change'), 'Reducir al mínimo el número y el alcance de las cuentas privilegiadas, supervisarlas y mantener un registro de sus actividades.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_privilege_change'), 'Analizar cada usuario o cuenta privilegiada para identificar y abordar cualquier riesgo, amenaza potencial, fuente e intención del atacante.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_privilege_change'), 'Evite que los administradores compartan cuentas y credenciales.');
+
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_suspicious_traffic'), 'Considerar el aislamiento temporal de dispositivos que generan tráfico sospechoso.');
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_system_errors'), 'Reiniciar los servicios o aplicaciones afectadas para mitigar interrupciones inmediatas.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_system_errors'), 'Desinstalar programas recién instalados: Si has instalado un programa recientemente, puede estar causando el error crítico. Intenta desinstalar el programa y observa si el error desaparece.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_system_errors'), 'Actualizar los controladores: Los controladores anticuados o dañados pueden causar el error crítico. Asegúrate de mantener tus controladores actualizados.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_system_errors'), 'Realizar una restauración del sistema: Si el error crítico comenzó después de realizar cambios en el sistema, intenta realizar una restauración del sistema a un punto anterior en el tiempo.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_system_errors'), 'Realizar un escaneo de malware: El malware también puede ser la causa del error crítico. Ejecuta un escaneo de malware en tu sistema para detectar y eliminar cualquier amenaza.');
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_snort_alert'), 'Monitorear comportamiento post-alerta.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_snort_alert'), 'Si Snort detecta una IP sospechosa, considera bloquearla temporalmente en el firewall hasta que puedas investigar más a fondo.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_snort_alert'), 'Asegúrate de que todos los dispositivos en la red usen contraseñas seguras y de que se cambien regularmente.');
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_time_related_events'), 'Verifique que personal administrativo acuda a las horas fuera del horario laboral.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_time_related_events'), 'Controlar los permisos y privilegios de los usuarios.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_time_related_events'), 'Educar al usuario ante las conexiones fuera del horario laboral.');
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_apt'), 'Monitorea constantemente los puertos.'),
+  ((SELECT id FROM alerts_categories WHERE code = 'check_apt'), 'Implementar segmentación adicional en la red para minimizar el impacto de futuros ataques.');
+
+INSERT INTO recommendations (rule_id, recommendation) VALUES
+  ((SELECT id FROM alerts_categories WHERE code = 'check_recon_activity'), 'Implementar mecanismos de protección adicionales contra escaneos, como firewalls o IDS.');
