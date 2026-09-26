@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, TIMESTAMP
 from datetime import datetime
 from database.db_connection import Base
+from sqlalchemy.orm import relationship
 
 
 class Alerts(Base):
@@ -18,3 +19,5 @@ class Alerts(Base):
     alert_category = Column(Integer, nullable=True)
     status = Column(Integer, nullable=True)
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
+
+    log = relationship("Logs", back_populates="alerts")
