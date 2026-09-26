@@ -1,81 +1,187 @@
-#from sqlalchemy.orm import Session
-#from database import SessionLocal
-from auth import create_user, authenticate_user
-from elasticsearch import Elasticsearch
-from utils import normalize  # Para la normalización de logs
-from utils import nxlog  # Para configurar NXLog
+from threading import Thread
+import webbrowser
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from app.controllers import log_controller, alert_controller, login_controller
+from utils import normalize
+from utils import elasticsearch 
+from rules import rules
+import uvicorn
 import time
-import rules  # Archivo donde están las reglas de correlación
+from datetime import datetime, timedelta
 
+es = elasticsearch.connect_elasticsearch()
 
-# Conexión a Elasticsearch
-es = Elasticsearch(
-    "https://localhost:9200",
-    basic_auth=('elastic', 'Y07U0Mmu7Z7+MpVfQJjf'),
-    verify_certs=False  
+# Crear instancia de FastAPI
+app = FastAPI()
+
+# Configuración de políticas CORS para permitir cualquier origen
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:5000", "localhost:3000",
+                   "localhost:5173","http://127.0.0.1:5173",
+                   "http://localhost:5173", "http://localhost:5173/",
+                   "http://localhost:3000", "http://localhost:3000/"],
+    allow_credentials=True,
+    allow_methods=[
+        "GET",
+        "POST",
+        "PUT",
+        "DELETE",
+        "OPTIONS",
+    ],
+    allow_headers=[
+        "Access-Control-Allow-Headers",
+        "Origin",
+        "Accept",
+        "X-Requested-With",
+        "Content-Type",
+        "Access-Control-Request-Method",
+        "Access-Control-Request-Headers",
+        "Access-Control-Allow-Origin",
+    ],
 )
 
+# Registrar los controladores
+app.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
+app.include_router(alert_controller.router, prefix="/alerts", tags=["Alerts"])
+app.include_router(login_controller.router, prefix="/users", tags=["Users"])
+
 # Índice de logs en Elasticsearch
-INDEX = "logs-*"
+INDEX = "logs"
+if not es.indices.exists(index=INDEX):
+    es.indices.create(index=INDEX)
 
 # Intervalo para leer los logs (en segundos)
-READ_INTERVAL = 30
+READ_INTERVAL = 50
 
 # Último timestamp procesado (puede iniciarse como 'now-1d' o leerlo de la base de datos)
 last_timestamp = "now-1d"
 
-# Lista de dispositivos para reglas específicas
-FILTERED_DEVICES = ["device1", "device2", "192.168.1.10"]
-
-# Configuración de reglas con sus dispositivos específicos o None para aplicar a todos
+# Configuración de reglas específicas
 RULES_CONFIG = {
     "brute_force": {
         "function": rules.check_brute_force,
-        "devices": None,
-        "log_size": 100
+        "devices": ["server_linux","windows_event","linux_log","server_windows"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=10)).isoformat()
     },
     "privilege_changes": {
-        "function": rules.check_privilege_changes,
-        "devices": None,  # Se aplica a todos los dispositivos
-        "log_size": 200
+        "function": rules.check_privilege_change,
+        "devices": ["server_linux","windows_event","linux_log","server_windows"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
     "anomalous_traffic": {
-        "function": rules.check_anomalous_traffic,
-        "devices": None,
-        "log_size": 50
+        "function": rules.check_suspicious_traffic,
+        "devices": ["firewall", "router", "switch", "server_linux","server_windows"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
     },
-    # Agregar más reglas con sus configuraciones aquí...
+    "system_errors": {
+        "function": rules.check_system_errors,
+        "devices": ["server_windows","os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log"], 
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
+    },
+    "snort_alert": {
+        "function": rules.check_snort_alert,
+        "devices": ["snort"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
+    },
+    "time_related_events": {
+        "function": rules.check_time_related_events,
+        "devices": ["server_windows","os_server", "server_linux", "windows_event", "linux_log", "hp_support_assistant", "powershell_log", "router", "switch"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
+    },
+    "apt": {
+        "function": rules.check_apt,
+        "devices": ["critical_system", "network"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
+    },
+    "recon_activity": {
+        "function": rules.check_recon_activity,
+        "devices": ["router", "switch"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
+    },
+    "exploitation_attempts": {
+        "function": rules.check_exploitation_attempts,
+        "devices": ["server", "network_device"],
+        "log_size": 1000,
+        "time_window": (datetime.now() - timedelta(minutes=5)).isoformat()
+    },
+    "unauthorized_access": {
+        "function": rules.check_unauthorized_access,
+        "devices": ["auth_server"],
+        "log_size": 5,
+        "time_window": "now-3m"
+    },
+    "malware_activity_detection": {
+        "function": rules.check_malware_activity,
+        "devices": ["user_device", "file_server", "endpoint"],
+        "log_size": 10,
+        "time_window": "now-10m"
+    },
+    "user_behavior_anomaly": {
+        "function": rules.check_user_behavior_anomaly,
+        "devices": ["auth_server", "idm_server"],
+        "log_size": 10,
+        "time_window": "now-15m"
+    },
+    "data_exfiltration": {
+        "function": rules.check_data_exfiltration,
+        "devices": ["firewall", "file_server", "network_device"],
+        "log_size": 1000, 
+        "time_window": "now-10m"
+    },
+    "security_config_changes": {
+        "function": rules.check_security_configuration_changes,
+        "devices": ["firewall", "auth_server", "security_server"],  # Dispositivos relevantes
+        "log_size": 10,  # Tamaño de log adecuado para cambios importantes
+        "time_window": None  # En tiempo real
+    },
+    "suspicious_internal_connections": {
+        "function": rules.check_suspicious_internal_connections,
+        "devices": ["server", "network_device", "endpoint"],  # Dispositivos relevantes para conexiones internas
+        "log_size": 100,  # Ajusta el tamaño según lo necesario
+        "time_window": "now-5m"  # Ventana de 5 minutos
+    }
 }
 
 
-def fetch_logs(es, index, last_timestamp, filtered_devices=None, size=100):
+def fetch_logs(es, index, time_window, filtered_devices=None, size=100):
     """
-    Obtiene los logs de Elasticsearch a partir de un timestamp dado y opcionalmente filtra por dispositivos.
+    Obtiene los logs de Elasticsearch a partir de un tiempo dado y opcionalmente filtra por dispositivos.
     """
     query = {
         "size": size,
         "query": {
             "bool": {
-                "must": [
-                    {
-                        "range": {
-                            "@timestamp": {
-                                "gt": last_timestamp
-                            }
-                        }
-                    }
-                ]
+                "must": []
             }
         },
         "sort": [
-            {"@timestamp": {"order": "asc"}}
+            {"timestamp": {"order": "asc"}}
         ]
     }
+
+    if time_window:
+        query["query"]["bool"]["must"].append({
+            "range": {
+                "timestamp": {
+                    "gte": time_window  # 'gte' para obtener logs desde el tiempo especificado
+                }
+            }
+        })
 
     if filtered_devices:
         query["query"]["bool"]["must"].append({
             "terms": {
-                "device_id.keyword": filtered_devices  # Asegúrate que este campo coincide con tus logs
+                "type.keyword": filtered_devices
             }
         })
 
@@ -84,79 +190,83 @@ def fetch_logs(es, index, last_timestamp, filtered_devices=None, size=100):
     return logs
 
 
-def process_rules(es, last_timestamp):
-    """
-    Procesa los logs según las configuraciones definidas en RULES_CONFIG.
-    """
+def process_rules(es):
     for rule_name, config in RULES_CONFIG.items():
-        print(f"Procesando regla: {rule_name}")
-
-        # Obtener logs según configuración de la regla
-        logs = fetch_logs(
-            es=es,
-            index=INDEX,
-            last_timestamp=last_timestamp,
-            filtered_devices=config["devices"],
-            size=config["log_size"]
-        )
+        print(f"Procesando regla {rule_name}")
         
-        # Llamar a la función de la regla con los logs obtenidos
-        config["function"](logs, es)
-
+        try:
+            logs = fetch_logs(
+                es=es,
+                index=INDEX,
+                time_window=config["time_window"],
+                filtered_devices=config["devices"],
+                size=config["log_size"]
+            )
+            config["function"](logs)
+        except Exception as e:
+            print(f"Error al procesar logs para la regla {rule_name}: {e}")
 
 def normalize_and_save_logs(es):
     """
     Inicia la normalización y el guardado de logs en Elasticsearch.
     """
-    normalize.start_monitoring('C:\\logs', es)  # Pasa la instancia de Elasticsearch aquí
+    normalize.start_monitoring('C:\\logs', es)
+
+def start_process_rules():
+    global last_timestamp
+    print("Inicia monitoreo")
+    #try:
+    while True:
+        try:
+            process_rules(es)
+        except Exception as e:
+            print(f"Error al procesar reglas: {e}")
+
+        try:
+            latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
+            if latest_logs:
+                last_timestamp = latest_logs[-1]['_source']['timestamp']
+        except Exception as e:
+            print(f"Error al obtener logs: {e}")
+        
+        time.sleep(READ_INTERVAL)
+
+    #except KeyboardInterrupt:
+    #    print("Deteniendo la ejecución...")
+
+
+def start_fastapi_server():
+    """Inicia el servidor FastAPI bajo demanda."""
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=8000)
+    except KeyboardInterrupt:
+        print("Interrupción manual detectada. Deteniendo el servidor...")
+        return
+
+def open_user_interface():
+    """Función para abrir la interfaz cuando el usuario da clic en el ícono."""
+    # Inicia el servidor FastAPI en un hilo separado
+    start_fastapi_server()
+    # Abre la interfaz de usuario en el navegador
+    #webbrowser.open("http://localhost:8000")
+
+def start_monitoring_task():
+    log_thread = Thread(target=normalize_and_save_logs, args=(es,))
+    log_thread.start()
+
+    rules_thread = Thread(target=start_process_rules)
+    rules_thread.start()
+
+    #log_thread.join()
+    #rules_thread.join()
 
 
 def main():
-    global last_timestamp
+    fastapi_thread = Thread(target=start_fastapi_server)
+    fastapi_thread.start()
 
-    # Crear una sesión para interactuar con la base de datos
-    #db: Session = SessionLocal()
+    start_monitoring_task()
 
-    # Configurar NXLog al inicio
-    #nxlog.configure_nxlog()  # Asumiendo que esta función está en nxlog.py
-
-    # Ejemplo de registro de un nuevo usuario
-    #username = "testuser"
-    #password = "password123"
-    #user = create_user(db, username, password)
-    #print(f"Usuario creado: {user.username}")
-
-    # Ejemplo de autenticación de usuario
-    #auth_user = authenticate_user(db, username, password)
-    #if auth_user:
-    #    print(f"Usuario autenticado: {auth_user.username}")
-    #else:
-    #    print("Fallo en la autenticación")
-
-    # Iniciar la normalización y guardado de logs en un hilo separado
-    normalize_and_save_logs(es)
-
-    # Lógica de lectura de logs y reglas de correlación
-    try:
-        while True:
-            # Leer nuevos logs de Elasticsearch y procesar reglas
-            process_rules(es, last_timestamp)
-
-            # Actualizar el timestamp al último log procesado
-            latest_logs = fetch_logs(es, INDEX, last_timestamp, size=1)
-            if latest_logs:
-                last_timestamp = latest_logs[-1]['_source']['@timestamp']
-
-            # Esperar antes de leer los logs nuevamente
-            time.sleep(READ_INTERVAL)
-
-    except KeyboardInterrupt:
-        print("Deteniendo la ejecución...")
-
-    #finally:
-        # Cerrar la sesión de base de datos al final del proceso
-        #db.close()
-
-
+    fastapi_thread.join()
 if __name__ == "__main__":
     main()

@@ -1,7 +1,26 @@
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, AsyncElasticsearch
+import urllib3
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def connect_elasticsearch():
-    es = Elasticsearch([{'host': 'localhost', 'port': 9200}])
+    es = Elasticsearch(
+        "https://localhost:9200",
+        basic_auth=('elastic', 'elastic'),
+        verify_certs=False  
+    )
+    if es.ping():
+        print('Conexión exitosa a Elasticsearch')
+    else:
+        print('Conexión fallida')
+    return es
+
+def connect_asyncelasticsearch():
+    es = AsyncElasticsearch(
+        "https://localhost:9200",
+        basic_auth=('elastic', 'elastic'),
+        verify_certs=False  
+    )
     if es.ping():
         print('Conexión exitosa a Elasticsearch')
     else:

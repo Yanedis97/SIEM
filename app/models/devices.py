@@ -12,4 +12,4 @@ class Devices(Base):
     device_type = Column(String(50), nullable=True)
     created_at = Column(TIMESTAMP, nullable=False, default=datetime.utcnow)
 
-    logs = relationship("Log", back_populates="device")
+    logs = relationship("Logs", back_populates="device")
