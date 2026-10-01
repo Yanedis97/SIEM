@@ -1,31 +1,27 @@
 from elasticsearch import Elasticsearch, AsyncElasticsearch
 import urllib3
+import os
+
+ES_HOST = os.getenv("ES_HOST", "https://localhost:9200")
+ES_USER = os.getenv("ES_USER", "elastic")
+ES_PASSWORD = os.getenv("ES_PASSWORD", "elastic")
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+
 def connect_elasticsearch():
     es = Elasticsearch(
-        "https://localhost:9200",
-        basic_auth=('elastic', 'elastic'),
+        ES_HOST,
+        basic_auth=(ES_USER, ES_PASSWORD),
         verify_certs=False  
     )
-    if es.ping():
-        print('Conexión exitosa a Elasticsearch')
-    else:
-        print('Conexión fallida')
-    return es
 
 def connect_asyncelasticsearch():
     es = AsyncElasticsearch(
-        "https://localhost:9200",
-        basic_auth=('elastic', 'elastic'),
+        ES_HOST,
+        basic_auth=(ES_USER, ES_PASSWORD),
         verify_certs=False  
     )
-    if es.ping():
-        print('Conexión exitosa a Elasticsearch')
-    else:
-        print('Conexión fallida')
-    return es
 
 def create_index(es, index_name):
     if not es.indices.exists(index=index_name):

@@ -7,13 +7,18 @@ from utils import normalize
 from utils import elasticsearch 
 from rules import rules
 import uvicorn
-import time
+import time, os
 from datetime import datetime, timedelta
+from database.db_connection import init_db
 
 es = elasticsearch.connect_elasticsearch()
 
 # Crear instancia de FastAPI
 app = FastAPI()
+
+@app.on_event("startup")
+def on_startup():
+    init_db()
 
 # Configuración de políticas CORS para permitir cualquier origen
 app.add_middleware(
@@ -210,7 +215,8 @@ def normalize_and_save_logs(es):
     """
     Inicia la normalización y el guardado de logs en Elasticsearch.
     """
-    normalize.start_monitoring('C:\\logs', es)
+    log_watch_dir = os.getenv("LOG_WATCH_DIR", "C:\\logs")
+    normalize.start_monitoring(log_watch_dir, es)
 
 def start_process_rules():
     global last_timestamp
@@ -251,10 +257,10 @@ def open_user_interface():
     #webbrowser.open("http://localhost:8000")
 
 def start_monitoring_task():
-    log_thread = Thread(target=normalize_and_save_logs, args=(es,))
+    log_thread = Thread(target=normalize_and_save_logs, args=(es,), daemon=True)
     log_thread.start()
 
-    rules_thread = Thread(target=start_process_rules)
+    rules_thread = Thread(target=start_process_rules, daemon=True)
     rules_thread.start()
 
     #log_thread.join()
@@ -262,7 +268,7 @@ def start_monitoring_task():
 
 
 def main():
-    fastapi_thread = Thread(target=start_fastapi_server)
+    fastapi_thread = Thread(target=start_fastapi_server, daemon=True)
     fastapi_thread.start()
 
     start_monitoring_task()

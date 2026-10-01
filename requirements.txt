@@ -1,1 +1,19 @@
+# API
+fastapi
+uvicorn
+pydantic
+
+# Base de datos (MySQL vía SQLAlchemy)
+sqlalchemy
+pymysql
+
+# Seguridad
+bcrypt
+
+# Procesamiento y normalización de logs
+watchdog
+paramiko
+
+# Elasticsearch
 elasticsearch
+urllib3
