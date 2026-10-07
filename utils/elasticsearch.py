@@ -15,6 +15,11 @@ def connect_elasticsearch():
         basic_auth=(ES_USER, ES_PASSWORD),
         verify_certs=False  
     )
+    if es.ping():
+        print('Conexión exitosa a Elasticsearch')
+    else:
+        print('Conexión fallida')
+    return es
 
 def connect_asyncelasticsearch():
     es = AsyncElasticsearch(
@@ -22,6 +27,7 @@ def connect_asyncelasticsearch():
         basic_auth=(ES_USER, ES_PASSWORD),
         verify_certs=False  
     )
+    return es
 
 def create_index(es, index_name):
     if not es.indices.exists(index=index_name):
