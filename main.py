@@ -11,7 +11,7 @@ import time, os
 from datetime import datetime, timedelta
 from database.db_connection import init_db
 
-es = elasticsearch.connect_elasticsearch()
+es = elasticsearch.get_es()
 
 # Crear instancia de FastAPI
 app = FastAPI()
