@@ -2,7 +2,7 @@ from threading import Thread
 import webbrowser
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.controllers import log_controller, alert_controller, login_controller
+from app.controllers import log_controller, alert_controller, login_controller, health_controller
 from utils import normalize
 from utils import elasticsearch 
 from rules import rules
@@ -11,7 +11,7 @@ import time, os
 from datetime import datetime, timedelta
 from database.db_connection import init_db
 
-es = elasticsearch.connect_elasticsearch()
+es = elasticsearch.get_es()
 
 # Crear instancia de FastAPI
 app = FastAPI()
@@ -51,6 +51,7 @@ app.add_middleware(
 app.include_router(log_controller.router, prefix="/logs", tags=["Logs"])
 app.include_router(alert_controller.router, prefix="/alerts", tags=["Alerts"])
 app.include_router(login_controller.router, prefix="/users", tags=["Users"])
+app.include_router(health_controller.router, tags=["Health"])
 
 # Índice de logs en Elasticsearch
 INDEX = "logs"

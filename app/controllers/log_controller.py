@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from app.services import log_service
+from utils.elasticsearch import get_es
 
 router = APIRouter()
 
 # Obtener logs con paginación
 @router.get("/all")
-def get_all_logs(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)):
+def get_all_logs(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100), es=Depends(get_es)):
     """
     Endpoint para obtener logs con paginación.
     Parámetros:
@@ -13,19 +14,19 @@ def get_all_logs(page: int = Query(1, ge=1), size: int = Query(10, ge=1, le=100)
         - size: cantidad de logs por página (por defecto 10, máximo 100).
     """
     try:
-        logs = log_service.get_all_logs(page=page, size=size)
+        logs = log_service.get_all_logs(es, page=page, size=size)
         return logs
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
 
 @router.get("/by-date")
-def logs_chart_data():
+def logs_chart_data(es=Depends(get_es)):
     """
     Endpoint para obtener datos para un gráfico de logs agrupados por fecha.
     """
     try:
-        chart_data = log_service.get_logs_chart_data()
+        chart_data = log_service.get_logs_chart_data(es)
         if not chart_data:
             raise HTTPException(status_code=404, detail="No se encontraron datos para el gráfico.")
         

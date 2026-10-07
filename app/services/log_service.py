@@ -1,10 +1,9 @@
 from fastapi import HTTPException
 from utils import elasticsearch
 
-es = elasticsearch.connect_elasticsearch()
 
 # Servicio para obtener los logs con paginación
-def get_all_logs(page: int = 1, size: int = 10):
+def get_all_logs(es, page: int = 1, size: int = 10):
     try:
         # Calcular el offset basado en el número de página y el tamaño de página
         offset = (page - 1) * size
@@ -17,8 +16,8 @@ def get_all_logs(page: int = 1, size: int = 10):
 
 
 def update_log(log_id, key_name):
-    # Actualización del documento
-    es.update(
+    # Las reglas lo llaman sin cliente: usa el cliente compartido
+    elasticsearch.get_es().update(
         index="logs",
         id=log_id,
         body={
@@ -29,7 +28,7 @@ def update_log(log_id, key_name):
     )
 
 
-def get_logs_chart_data():
+def get_logs_chart_data(es):
     """
     Servicio para obtener los datos necesarios para una gráfica de logs agrupados por fecha.
     """

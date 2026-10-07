@@ -1,6 +1,8 @@
 from elasticsearch import Elasticsearch, AsyncElasticsearch
 import urllib3
 import os
+from functools import lru_cache
+from app.core.config import settings
 
 ES_HOST = os.getenv("ES_HOST", "https://localhost:9200")
 ES_USER = os.getenv("ES_USER", "elastic")
@@ -15,6 +17,17 @@ def connect_elasticsearch():
         basic_auth=(ES_USER, ES_PASSWORD),
         verify_certs=False  
     )
+    if es.ping():
+        print('Conexión exitosa a Elasticsearch')
+    else:
+        print('Conexión fallida')
+    return es
+
+@lru_cache(maxsize=1)
+def get_es():
+    """Cliente único de Elasticsearch para toda la app. Usable con Depends."""
+    return connect_elasticsearch()
+
 
 def connect_asyncelasticsearch():
     es = AsyncElasticsearch(
@@ -22,6 +35,7 @@ def connect_asyncelasticsearch():
         basic_auth=(ES_USER, ES_PASSWORD),
         verify_certs=False  
     )
+    return es
 
 def create_index(es, index_name):
     if not es.indices.exists(index=index_name):
